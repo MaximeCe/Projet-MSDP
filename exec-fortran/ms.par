@@ -1,0 +1,138 @@
+                                   ms.par                 
+                                   ========
+                               "disk.par" type
+                      parameters for solar disk observations        
+                              (format a8,i8)                               
+                 * (character 18) parameters often modified  
+                   for all parameters generally: 1 = action; 0 = inoperative 
+                                                        
+                                 SUCCESSIVE STEPS
+                                 ================
+     ixy       1 *  computation of average files dark, flat, field-stop 
+   igeom       1 *  geometry                                  
+   iflat       0 *  calibration
+    ibmc       0    elementary calibrated c-files (1 file per time) 
+    icmd       0    d-files (spectroheliograms and I/V maps)
+    ides       0    dessins   (1;   0=no plot)
+  iquick       0    q-filesfor full scanned targets     
+  igrayq       0    plots of q-files
+                             Automatic plots after calculation
+                        (0 = plots available only afterwards with "gv")
+    igeo       1    plot of geo.ps             
+  iflat1       0    flat1.ps        0        
+  iflat2       0    flat2.ps        0      
+    ical       0    cal.ps              
+--------              
+                                SELECTED OBSERVATIONS
+                                =====================
+    nfx1       1   first used dark current
+    nfx2       1   last  used dark current    5
+    nfy1       1   first used flat field      1
+    nfy2       2   last  used flat field     25 
+    nfb1       0   first used obs
+    nfb2       0   last  used obs
+
+    nob1       1   first image to be processed             1
+    nob2       5   last  image to be processed           300  
+   ntmax       5   number of images per scan
+ priscan       4   = 4 for Meudon (5 images), scanning by prisms (2,3,1,5,4))  
+ nobstep       5   step between first images of two scans  
+
+     dob20170330   date of observation (optional)       
+    tob110200351 * first time for observations to be processed
+    tob224000000   last time              
+    tdc1       0   same for dark current     
+    tdc224000000           
+    tfs1       0   same for field stop
+    tfs2       0    
+   calfs      -1   0
+                   -1 if flat field Y replaces field stop Z
+    tff10959000   same for flat field          
+    tff22400000
+     nff       1   number of flat fields
+------                                                          
+                                  GEOMETRY
+                                  ========
+    kold       0    results with old geometry
+    knew       1    results with new geometry  (both are possible successively)
+      is    1536    CCD X-dimension
+      js    1024    CCD Y-dimension      
+      li  442000    field stop length (arcsec/1000)  
+      lj   61000    field stop width
+   jypas   45000     < translation between images (for correlations)  
+   nline       1   spectral line index                               
+   ncam1       1   detector index
+      nm       9   number of channels
+    lbda    6563   line wavelength (Angst)
+    dlbd     300   wavelength distance between channels (mA)   
+  mupris    9000   translation between output channels (microns)
+  mustep    2500   distance betwwen successive slits (microns)      
+                      
+   nwinp       1   number of simultaneous detectors
+  interc      15   approximate distance between right edge of a channel
+                   and left edge of the next one (unit = CCD pixel)    
+   nbcln    1024   final number of X-CCD pixels        
+   nblgn    1536   final number of Y-CCD pixels        
+  invern       0   0   j-value of pixels of same wavelength 
+                       decreases with channels
+                   1   j-value of pixels of same wavelength 
+                       increases with channels       
+     idc       1    generally 1
+                    0 = dark current not subtracted 
+                    -1 = dark current not abvailable
+      si      15   intensity threshold for channel edges detection versus X 
+                    0 = automatic detection for si,sgi,sj,sgj
+ mingrad       8   minimum threshold of intensity gradient in newgeom
+  interp       1   parabolic interpolation of intensity gradients
+     sgi       8   intensity threshold for intensity gradients versus X
+      sj      15   the same for intensity versus Y
+     sgj       5   the same for gradients versus Y
+    iadd       0   for z(j) add  ii-iadd,.....ii+iadd data 
+ milangi     -40   approximated angle between longer edge of channels
+                     and CCD  (radian/1000)
+  milgeo    2000   threshohld for geometry accuracy:,maximum departure between
+                     values and regression lines (plot geo.ps, unit pixel/1000)
+   nleft       0   interpolated approximations for bad channels (left)
+  nright       0   the same (right)
+      i1       1    first useful pixel in the i-direction
+     i2m       0    the last useful pixel in the i-direction is 
+                      i2=im-i2m       (im = total number of pixels)
+      j1       1    same definitions for j
+     j2m       0    .....
+     lip      40    the curvature of channels is determined by
+                    3 intervals around 3 points of the longer edge.
+                    If L is the length of this edge, the points
+                    are located at
+                                L*(o.5-lip/100)
+                                L*(o.5+lip/100)
+    jeps      20    The accurate determination of the longest edges 
+                    is searched around
+                        approximate values +/- jeps pixels
+   intvi      60    The edges parallel to i are determined by cuts
+                    along j, averaged over the interval
+                    +/- intvi around the 3 points metioned above
+                    (see lip)
+   intvj      30    Similar definition for short edges parallel to j,
+                    but with the intervals
+                          left  end - left  end +intvj
+                          right end - right end - intvj  
+    leps      50    The detection of points with maximum gradient
+                    is made in 2 steps:
+                       - approximate values corresponding to
+                         signal = intensity threshold
+                       - search of maximum gradient in intervals
+                         +/- leps around these values
+      n1       1     The useful channels are numbers n so that
+                         n1.le.n.le.(nm-n1+1)
+                    where nm is the total number of observed channels
+  distor       1    1 = curvature of channels taken into account
+                        for detection (check not included in calculation)
+                    0 = curvature not taken into account 
+                            
+   calfs      -1    -1 = field stop is replaced by flat field
+                         for geometry
+-----                      
+   iswap       1   1 for LINUX
+  milsec     500   output pixel (unit arcsec/1000)
+                                                               
+end                                    
