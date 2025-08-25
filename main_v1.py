@@ -3,7 +3,6 @@ import numpy as np
 from astropy.io import fits
 from matplotlib import pyplot as plt
 from matplotlib.path import Path
-from validators import es_cif
 
 
 def load_fits(file_path):
@@ -11,7 +10,7 @@ def load_fits(file_path):
     try:
         with fits.open(file_path) as hdul:
             print(f"✔️ Fichier chargé : {file_path}")
-            return hdul[0].data.astype(np.float32)
+            return hdul[0].data.astype(np.float32)  # type: ignore
     except FileNotFoundError:
         print(f"⚠️ Fichier manquant : {file_path}")
         return None
@@ -271,7 +270,7 @@ def detect_edges(flat_path, dark_path):
 
     line1, line2, line3 = [], [], []
 
-    fig, axs = plt.subplots(2, 3, figsize=(15, 10))
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
     axs = axs.flatten()
 
     for idx, (y, second_derivative) in enumerate(derivatives.items()):
@@ -322,22 +321,13 @@ def detect_edges(flat_path, dark_path):
         axs[idx].set_xlabel("x")
         axs[idx].set_ylabel("Dérivée")
 
-        # Affichage de l'intensité du flat sur la ligne horizontale y
-        axs[idx + 3].plot(flat[y, :], label=f"Intensité (y={y})", color='g')
-        axs[idx + 3].set_title(f"Intensité du flat pour y={y}")
-        axs[idx + 3].legend()
-        axs[idx + 3].set_xlabel("x")
-        axs[idx + 3].set_ylabel("Intensité")
-
         print("Points détectés :", filtered_points)
         print("Nombre de points détectés :", len(filtered_points))
         print("fin de l'analyse de la ligne y=", y, '\n')
     plt.tight_layout()
     plt.show()
 
-
-    detected_points = [line1, line2, line3]
-    return detected_points
+    return line1, line2, line3  # Retourne les points détectés pour chaque ligne len = 18
 
 
 def parabolic_interpolation(point1, point2, point3):
@@ -389,14 +379,12 @@ def parabolic_interpolation(point1, point2, point3):
     return a, b, c  # Retourne les coefficients (a, b, c) de la parabole
 
 
-def parabolic_interpolations(points):
+def parabolic_interpolations(points1, points2, points3):
     """Retourne les équations de paraboles pour 18 paires de points."""
 
-    if len(points) != 3 or any(len(p) != 18 for p in points):
+    if len(points1) != 18 or len(points2) != 18:
         raise ValueError(
-            "La liste des points doit contenir exactement 3 sous-listes de 18 éléments chacune.")
-
-    points1, points2, points3 = points
+            "Les listes de points doivent contenir exactement 18 éléments chacune.")
 
     equations = []
     for p1, p2, p3 in zip(points1, points2, points3):
@@ -840,7 +828,7 @@ def crop(image, corners):
     # Utiliser une méthode pour vérifier si les points sont dans le quadrilatère
     polygon = Path(sorted_corners)
     points = np.vstack((rr, cc)).T
-    inside = polygon.contains_points(points).reshape(image.shape)
+    inside = np.array(polygon.contains_points(points)).reshape(image.shape)
     print("Masque créé avec succès.")
 
     # Appliquer le masque
@@ -851,11 +839,11 @@ def crop(image, corners):
     return cropped_image
 
 
-def display_detected_points(flat, detected_points, detected_points_h):
+def display_detected_points(flat, detected_points_1, detected_points_2, detected_points_3, detected_points_h):
     plt.figure(figsize=(10, 10))
     plt.imshow(flat, cmap='gray', extent=[0, flat.shape[1], flat.shape[0], 0])
 
-    for points in [detected_points[0], detected_points[1], detected_points[2]]:
+    for points in [detected_points_1, detected_points_2, detected_points_3]:
         for x, y in points:
             plt.plot(x, y, 'ro')
 
@@ -866,7 +854,7 @@ def display_detected_points(flat, detected_points, detected_points_h):
     plt.title("Points détectés par detect_edges et detect_edges_y")
     plt.xlim(0, flat.shape[1])
     plt.ylim(flat.shape[0], 0)
-    # plt.show()
+    plt.show()
 
 
 def display_parabolas_and_lines(flat, parabolas, lines):
@@ -893,7 +881,7 @@ def display_parabolas_and_lines(flat, parabolas, lines):
         plt.ylim(flat.shape[0], 0)
         plt.title(f"Quadrilatère {i + 1}")
         plt.legend()
-        # plt.show()
+        plt.show()
 
 
 def process_quadrilaterals(flat, parabolas, lines, detected_points_h, image_path):
@@ -902,34 +890,23 @@ def process_quadrilaterals(flat, parabolas, lines, detected_points_h, image_path
         combined_points = detected_points_h[i] + detected_points_h[i + 1]
         transformed_points_h.append(combined_points)
 
-    lcorners = []
     for quadrilateral_index in range(1, 10):
         near_points = transformed_points_h[quadrilateral_index - 1]
         corners = find_quadrilateral_corners(
             parabolas, lines, quadrilateral_index, near_points)
         if None in corners:
             print("Erreur lors de la détermination des coins du quadrilatère.")
-            return None, None, None, None
-        lcorners.append(corners)
+            return
 
-        # display_quadrilateral_corners(flat, corners, quadrilateral_index)
+        display_quadrilateral_corners(flat, corners, quadrilateral_index)
 
         image = load_fits(image_path)
         if image is None:
             print("Erreur lors du chargement de l'image.")
-            return None, None, None, None
+            return
 
         cropped_image = crop(image, corners)
-        # display_cropped_image(cropped_image, quadrilateral_index)
-    
-    Cs, Fs, Ds, As = [], [], [], []
-    for corner in lcorners:
-        Cs.append(corner[0])
-        Fs.append(corner[1])
-        Ds.append(corner[2])
-        As.append(corner[3])
-    return Cs, Fs, Ds, As
-    
+        display_cropped_image(cropped_image, quadrilateral_index)
 
 
 def display_quadrilateral_corners(flat, corners, quadrilateral_index):
@@ -940,13 +917,13 @@ def display_quadrilateral_corners(flat, corners, quadrilateral_index):
     plt.title(f"Coins du quadrilatère {quadrilateral_index}")
     plt.xlim(0, flat.shape[1])
     plt.ylim(flat.shape[0], 0)
-    # plt.show()
+    plt.show()
 
 
 def display_cropped_image(cropped_image, quadrilateral_index):
     plt.imshow(cropped_image, cmap='gray')
     plt.title(f"Quadrilatère {quadrilateral_index}")
-    # plt.show()
+    plt.show()
 
 
 def display_start():
@@ -958,80 +935,6 @@ def display_start():
     print("En collaboration avec :")
     print("MEIN Pierre, SAYEDE Frédéric de l'Observatoire de Paris")
     print("----------------------------------------------------------\n")
-
-def statistiques(cs, fs, bs, es, as_, ds, ls, ns, ks, ms, Cs, Fs, Ds, As):
-    # Création des derniers points pour les calculs
-    Bs = bs
-    Es = es
-    
-    # Calcul des vecteurs DE, AB, DF, AC, CF, BE, AD
-    DE = [np.array(d) - np.array(e) for d, e in zip(Ds, Es)]
-    AB = [np.array(a) - np.array(b) for a, b in zip(As, Bs)]
-    DF = [np.array(f) - np.array(d) for f, d in zip(Fs, Ds)]
-    AC = [np.array(c) - np.array(a) for c, a in zip(Cs, As)]
-    CF = [np.array(f) - np.array(c) for f, c in zip(Fs, Cs)]
-    BE = [np.array(b) - np.array(e) for b, e in zip(Bs, Es)]
-    AD = [np.array(a) - np.array(d) for a, d in zip(As, Ds)]
-    
-    # Vérification que tous les vecteurs sont des listes de tableaux NumPy
-    vectors = [DE, AB, DF, AC, CF, BE, AD]
-    labels = ["DE", "AB", "DF", "AC", "CF", "BE", "AD"]
-
-    for i, vector in enumerate(vectors):
-        if not all(isinstance(v, np.ndarray) and v.shape == (2,) for v in vector):
-            print(f"Erreur dans le vecteur {labels[i]} : {vector}")
-            vectors[i] = [np.array([0, 0])] * len(vector)  # Remplacement par des vecteurs nuls
-
-    # Plot des x, des y et du module de chaque vecteur dans un subplot
-    fig, axs = plt.subplots(7, 3, figsize=(15, 15))
-    fig.suptitle("Statistiques des vecteurs")
-    i = 0
-    axs[i, 0].set_title("Composante X")
-    axs[i, 1].set_title("Composante Y")
-    axs[i, 2].set_title("Module")
-    
-    for i, (vector, label) in enumerate(zip(vectors, labels)):
-        # Composante X
-        x_values = [v[0] for v in vector]
-        min_x = min(x_values)
-        normalized_x = [x - min_x for x in x_values]
-        axs[i, 0].plot(normalized_x, marker='o', label=f"{label}")
-        # Courbe de tendance pour X
-        trend_x = np.polyfit(range(len(normalized_x)), normalized_x, 2)
-        axs[i, 0].plot(range(len(normalized_x)), np.polyval(trend_x, range(len(normalized_x))), linestyle='--')
-        
-        # Composante Y
-        y_values = [v[1] for v in vector]
-        min_y = min(y_values)
-        normalized_y = [y - min_y for y in y_values]
-        axs[i, 1].plot(normalized_y, marker='o', label=f"{label}")
-        # Courbe de tendance pour Y
-        trend_y = np.polyfit(range(len(normalized_y)), normalized_y, 2)
-        axs[i, 1].plot(range(len(normalized_y)), np.polyval(trend_y, range(len(normalized_y))), linestyle='--')
-        
-        # Module
-        module = [np.sqrt(v[0]**2 + v[1]**2) for v in vector]
-        min_module = min(module)
-        normalized_module = [m - min_module for m in module]
-        axs[i, 2].plot(normalized_module, marker='o', label=f"{label}")
-        # Courbe de tendance pour le module
-        trend_module = np.polyfit(range(len(normalized_module)), normalized_module, 2)
-        axs[i, 2].plot(range(len(normalized_module)), np.polyval(trend_module, range(len(normalized_module))), linestyle='--')
-        
-        axs[i, 0].legend()
-        axs[i, 1].legend()
-        axs[i, 2].legend()
-        
-        # Fix y-axis limits for comparison
-        axs[i, 0].set_ylim(0, 3)
-        axs[i, 1].set_ylim(0, 3)
-        axs[i, 2].set_ylim(0, 3)
-    
-    axs[i, 0].set_xlabel("Index")
-    axs[i, 1].set_xlabel("Index")
-    axs[i, 2].set_xlabel("Index")
-    plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to fit the title
-    plt.show()
 
 
 def display_end():
@@ -1057,112 +960,25 @@ def main():
         return
 
     # Détection des bords horizontaux sur le flat
-    detected_points = detect_edges(
+    detected_points_1, detected_points_2, detected_points_3 = detect_edges(
         flat_path, dark_path)
-    if not detected_points[0] or not detected_points[1] or not detected_points[2]:
+    if not detected_points_1 or not detected_points_2 or not detected_points_3:
         print("Erreur lors de la détection des bords.")
         return
-    
-    # récupérations des points détéctés pour les bords verticaux:    
-    cs = []
-    fs = []
-    bs = []
-    es = []
-    as_ = []
-    ds = []
-    for i in range(0, len(detected_points[0])):
-        if i % 2 == 0:
-            cs.append(detected_points[0][i])
-            bs.append(detected_points[1][i])
-            as_.append(detected_points[2][i])
-        else :
-            fs.append(detected_points[0][i])
-            es.append(detected_points[1][i])
-            ds.append(detected_points[2][i])
-            
-    """
-             |    |
-             |    |
-          C  l    n   F
-            ##########
-            ##########
-----------c ########## f----------
-            ##########
-            ##########
-            ##########
-------B = b ########## e = E------
-            ##########
-            ##########
-----------a ########## d----------
-            ##########
-            ##########
-          A  k    m   D
-             |    |
-             |    |
-    """ 
-        
-        
-    
 
     # Détection des bords verticaux sur le flat
     detected_points_h = detect_edges_y(flat_path, dark_path)
     if not detected_points_h:
         print("Erreur lors de la détection des bords.")
         return
-    
-    # Récupérations des points détéctés pour les bords horizontaux:
-    ls = []
-    ks = []
-    ns = []
-    ms = []
-    for i in range(0, len(detected_points_h)):
-        if i % 2 == 0:
-            ls.append(detected_points_h[i][0])
-            ks.append(detected_points_h[i][1])
-        else :
-            ns.append(detected_points_h[i][0])
-            ms.append(detected_points_h[i][1])
-
-        
-    # Affichage des points détectés sur l'image flat pour le premier canal
-    plt.figure(figsize=(10, 10))
-    plt.imshow(flat, cmap='gray', extent=[0, flat.shape[1], flat.shape[0], 0])
-
-    # Afficher le premier point de chaque liste avec une couleur et une légende différente
-    if as_:
-        plt.plot(as_[0][0], as_[0][1], 'ro', label='Point A (as_)')
-    if bs:
-        plt.plot(bs[0][0], bs[0][1], 'go', label='Point B (bs)')
-    if cs:
-        plt.plot(cs[0][0], cs[0][1], 'bo', label='Point C (cs)')
-    if ds:
-        plt.plot(ds[0][0], ds[0][1], 'yo', label='Point D (ds)')
-    if es:
-        plt.plot(es[0][0], es[0][1], 'mo', label='Point E (es)')
-    if fs:
-        plt.plot(fs[0][0], fs[0][1], 'co', label='Point F (fs)')
-    if ks:
-        plt.plot(ks[0][0], ks[0][1], 'r*', label='Point K (ks)')
-    if ls:
-        plt.plot(ls[0][0], ls[0][1], 'g*', label='Point L (ls)')
-    if ms:
-        plt.plot(ms[0][0], ms[0][1], 'b*', label='Point M (ms)')
-    if ns:
-        plt.plot(ns[0][0], ns[0][1], 'y*', label='Point N (ns)')
-
-    plt.legend()
-    plt.title("Premier point de chaque liste affiché sur l'image flat")
-    plt.xlim(0, flat.shape[1])
-    plt.ylim(flat.shape[0], 0)
-    plt.show()
 
     # Affichage des points détectés sur l'image flat
-    # display_detected_points(
-    #     flat, detected_points, detected_points_h)
+    display_detected_points(
+        flat, detected_points_1, detected_points_2, detected_points_3, detected_points_h)
 
     # Calcul des équations des paraboles pour les bords horizontaux
     parabolas = parabolic_interpolations(
-        detected_points)
+        detected_points_1, detected_points_2, detected_points_3)
     # Calcul des coefficients des droites pour les bords verticaux
     lines = compute_lines_coefficients(detected_points_h)
     if not parabolas or not lines:
@@ -1170,13 +986,11 @@ def main():
         return
 
     # Affichage des paraboles et des droites détectées sur l'image flat
-    # display_parabolas_and_lines(flat, parabolas, lines)
+    display_parabolas_and_lines(flat, parabolas, lines)
 
     # Traitement des quadrilatères détectés dans l'image
-    Cs, Fs, Ds, As = process_quadrilaterals(flat, parabolas, lines, detected_points_h, image_path)
-    
-    # affichage des statistiques :
-    statistiques(cs, fs, bs, es, as_, ds, ls, ks, ns, ms, Cs, Fs, Ds, As)
+    process_quadrilaterals(flat, parabolas, lines,
+                           detected_points_h, image_path)
 
     # Affiche les informations de fin du programme
     display_end()
@@ -1184,3 +998,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
+

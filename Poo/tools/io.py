@@ -5,7 +5,7 @@ def load_fits(file_path):
     try:
         with fits.open(file_path) as hdul:
             print(f"✔️ Fichier chargé : {file_path}")
-            return hdul[0].data.astype(np.float32)
+            return hdul[0].data.astype(np.float32) # type: ignore
     except FileNotFoundError:
         print(f"⚠️ Fichier manquant : {file_path}")
         return None
