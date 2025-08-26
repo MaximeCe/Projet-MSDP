@@ -1,33 +1,36 @@
-from astropy.io import fits
 import numpy as np
+from astropy.io import fits
 
-def load_fits(file_path):
-    try:
-        with fits.open(file_path) as hdul:
-            print(f"✔️ Fichier chargé : {file_path}")
-            return hdul[0].data.astype(np.float32) # type: ignore
-    except FileNotFoundError:
-        print(f"⚠️ Fichier manquant : {file_path}")
-        return None
 
-def preprocess_flat(flat_path, dark_path):
-    flat = load_fits(flat_path)
-    dark = load_fits(dark_path)
+class Io:
+    @staticmethod
+    def load_fits(file_path: str):
+        """Charge un fichier FITS si disponible, sinon retourne None."""
+        try:
+            with fits.open(file_path) as hdul:
+                print(f"✔️ Fichier chargé : {file_path}")
+                return hdul[0].data.astype(np.float32) # type: ignore
+        except FileNotFoundError:
+            print(f"⚠️ Fichier manquant : {file_path}")
+            return None
 
-    print("\\n🔍 Prétraitement du flat en cours...")
+    @staticmethod
+    def preprocess_fits(image_path, master_dark=None, master_flat=None, master_bias=None):
+        """Prétraite une image FITS avec Dark, Flat, Bias (optionnels)."""
+        image = Io.load_fits(image_path)
+        if image is None:
+            return None
 
-    if flat is None:
-        print("❌ Impossible de traiter le flat : fichier introuvable.")
-        return None
+        dark = Io.load_fits(master_dark) if master_dark else None
+        flat = Io.load_fits(master_flat) if master_flat else None
+        bias = Io.load_fits(master_bias) if master_bias else None
 
-    if dark is not None:
-        print("\\n📊 Statistiques avant traitement :")
-        print(f"Moyenne : {np.mean(flat):.2f}, Médiane : {np.median(flat):.2f}, Écart-type : {np.std(flat):.2f}")
-        flat -= dark
-        print("\\n📊 Statistiques après traitement :")
-        print(f"Moyenne : {np.mean(flat):.2f}, Médiane : {np.median(flat):.2f}, Écart-type : {np.std(flat):.2f}")
-    else:
-        print("❌ Impossible de traiter le flat : dark manquant.")
+        if bias is not None:
+            image -= bias
+        if dark is not None:
+            image -= dark
+        if flat is not None:
+            flat[flat == 0] = 1
+            image /= flat
 
-    print("✔️ Prétraitement du flat terminé.\\n")
-    return flat
+        return image

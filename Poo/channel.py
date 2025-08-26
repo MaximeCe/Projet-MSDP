@@ -1,9 +1,6 @@
 from point import Point
 from edge import Edge
-from tools import (
-    parabolic_interpolation, line_coefficients, get_parallelogram_equations,
-    find_quadrilateral_corners
-)
+from tools.computation import Computation
 
 
 class Channel:
@@ -38,14 +35,18 @@ class Channel:
         """Construit les bords : 2 paraboles (gauche/droite) et 2 droites (haut/bas)"""
         try:
             # Paraboles : c,e,a (gauche) et f,d,b (droite)
-            parabole_gauche = parabolic_interpolation(self.points['c'].xy(), self.points['e'].xy(), self.points['a'].xy())
-            parabole_droite = parabolic_interpolation(self.points['f'].xy(), self.points['d'].xy(), self.points['b'].xy())
-            self.edges.append(Edge("parabole_gauche", *parabole_gauche,  self))
-            self.edges.append(Edge("parabole_droite", *parabole_droite, self))
+            parabole_gauche = Computation.parabolic_interpolation(
+                self.points['c'].xy(), self.points['e'].xy(), self.points['a'].xy())
+            parabole_droite = Computation.parabolic_interpolation(
+                self.points['f'].xy(), self.points['d'].xy(), self.points['b'].xy())
+            self.edges.append(Edge("parabole_gauche", *parabole_gauche, canal=self))
+            self.edges.append(Edge("parabole_droite", *parabole_droite, canal=self))
 
             # Droites : c-f (haut), a-d (bas)
-            droite_haut = line_coefficients(self.points['l'].xy(), self.points['n'].xy())
-            droite_bas = line_coefficients(self.points['k'].xy(), self.points['m'].xy())
+            droite_haut = Computation.line_coefficients(
+                self.points['l'].xy(), self.points['n'].xy())
+            droite_bas = Computation.line_coefficients(
+                self.points['k'].xy(), self.points['m'].xy())
             self.edges.append(
                 Edge("droite_haut", *droite_haut, c=None, canal=self))
             self.edges.append(
@@ -64,8 +65,7 @@ class Channel:
                         for edge in self.edges if "parabole" in edge.type]
         lines = [edge.coefficients()
                     for edge in self.edges if "parabole" not in edge.type]
-        print(f" -_-_-_-_-_-_-_-_LINES = {lines}-_-_-_-_-_-_-_-_-")
-        print(f" -_-_-_-_-_-_-_-PARABOLE = {parabolas}-_-_-_-_-_-_-_-_-")
+
 
         # Mock pour near_points → basé sur les points existants
         near_points = [
@@ -74,10 +74,9 @@ class Channel:
             self.points['a'].xy(),
             self.points['d'].xy()
         ]
-        results = find_quadrilateral_corners(
+        results = Computation.find_quadrilateral_corners(
             parabolas,
             lines,
-            self.index + 1,
             near_points
         )
 

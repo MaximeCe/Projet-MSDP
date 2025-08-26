@@ -1,5 +1,6 @@
+from matplotlib import lines
 from image import Image
-import tools
+from tools.display import Display
 
 
 def main():
@@ -10,7 +11,6 @@ def main():
         image_path="image.fits",
         master_dark="dark.fits"
     )
-
 
     print(image)
     # image.afficher()
@@ -38,10 +38,12 @@ def main():
         print(f"  - {point.nom} : ({point.x:.1f}, {point.y:.1f})")
     image.afficher(points)
     
-    # addicher les bords du canal
-    tools.display_parabolas_and_lines(image, first_channel)
-
+    # afficher les bords du canal
+    parabolas = [edge.coefficients() for edge in first_channel.edges if "parabole" in edge.type]
+    lines = [edge.coefficients() for edge in first_channel.edges if "parabole" not in edge.type]
+    Display.display_parabolas_and_lines(image, parabolas, lines) ## TODO: Debug ici
 
 
 if __name__ == "__main__":
     main()
+ 

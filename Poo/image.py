@@ -1,6 +1,6 @@
-from tools import detect_edges_following_x, detect_edges_following_y, load_fits
-from channel import Channel  # à créer ensuite
-
+from channel import Channel  
+from tools.detector import Detector
+from tools.io import Io
 
 class Image:
     def __init__(self, image_path, master_dark=None, nombre_canaux=9):
@@ -20,13 +20,13 @@ class Image:
 
     def load_and_process_image(self):
         """Charge l’image FITS et applique uniquement le dark."""
-        image = load_fits(self.image_path)
+        image = Io.load_fits(self.image_path)
         if image is None:
             raise ValueError(
                 f"❌ Impossible de charger l'image : {self.image_path}")
 
         if self.master_dark:
-            dark = load_fits(self.master_dark)
+            dark = Io.load_fits(self.master_dark)
             if dark is not None:
                 image -= dark
             else:
@@ -45,7 +45,7 @@ class Image:
         dark_path = self.master_dark
 
         # Détection horizontale (3 lignes → 18 points pour chaque)
-        detected = detect_edges_following_x(self)
+        detected = Detector.detect_edges_x(self)
         if not all(detected):
             raise ValueError("❌ Erreur : points horizontaux non détectés.")
 
@@ -62,7 +62,7 @@ class Image:
                 ds.append(detected[2][i])
 
         # Détection verticale (18 colonnes → 2 points chacune)
-        detected_h = detect_edges_following_y(
+        detected_h = Detector.detect_edges_y(
             self, be_list=detected[1])
         if not detected_h:
             raise ValueError("❌ Erreur : points verticaux non détectés.")
