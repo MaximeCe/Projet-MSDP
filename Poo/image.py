@@ -1,6 +1,4 @@
-from tools import detect_edges, detect_edges_y
-import numpy as np
-from tools import load_fits
+from tools import detect_edges_following_x, detect_edges_following_y, load_fits
 from channel import Channel  # à créer ensuite
 
 
@@ -9,11 +7,13 @@ class Image:
         self.image_path = image_path
         self.master_dark = master_dark
         self.nombre_canaux = nombre_canaux
+
         self.resolution = None
         self.data = None
+        self.load_and_process_image()
+        self.shape = self.data.shape if self.data is not None else (0, 0)
         self.channels = []
 
-        self.load_and_process_image()
         self.create_channels()
 
 
@@ -43,10 +43,9 @@ class Image:
         # Appliquer le dark au flat et détecter les points
         flat_path = "flat.fits"
         dark_path = self.master_dark
-        image_path = self.image_path
 
         # Détection horizontale (3 lignes → 18 points pour chaque)
-        detected = detect_edges(flat_path, dark_path)
+        detected = detect_edges_following_x(self)
         if not all(detected):
             raise ValueError("❌ Erreur : points horizontaux non détectés.")
 
@@ -63,7 +62,8 @@ class Image:
                 ds.append(detected[2][i])
 
         # Détection verticale (18 colonnes → 2 points chacune)
-        detected_h = detect_edges_y(flat_path, dark_path, self.nombre_canaux)
+        detected_h = detect_edges_following_y(
+            self, be_list=detected[1])
         if not detected_h:
             raise ValueError("❌ Erreur : points verticaux non détectés.")
 
@@ -81,7 +81,7 @@ class Image:
             "as_": as_, "bs": bs, "cs": cs, "ds": ds, "es": es, "fs": fs,
             "ks": ks, "ls": ls, "ms": ms, "ns": ns
         }
-
+        print(data_dict)
         # Créer les canaux à partir des données
         for i in range(self.nombre_canaux):
             canal = Channel(id=i + 1, image=self, index=i, data=data_dict)

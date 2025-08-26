@@ -8,7 +8,7 @@ from matplotlib.path import Path
 def load_fits(file_path):
     """Charge un fichier FITS si disponible, sinon retourne None."""
     try:
-        with fits.open(file_path) as hdul: # type: ignore
+        with fits.open(file_path) as hdul:  # type: ignore
             print(f"✔️ Fichier chargé : {file_path}")
             return hdul[0].data.astype(np.float32)  # type: ignore
     except FileNotFoundError:
@@ -87,49 +87,22 @@ def preprocess_fits(image_path, master_dark=None, master_flat=None, master_bias=
     return image  # Retourne l'image traitée pour un éventuel enregistrement
 
 
-def preprocess_flat(flat_path, dark_path):
-    """
-    Preprocesses a flat field image by subtracting a dark frame.
-    This function loads a flat field image and a dark frame from the specified file paths.
-    It then subtracts the dark frame from the flat field image to correct it. The function
-    also prints statistical information (mean, median, and standard deviation) about the 
-    flat field image before and after the correction.
-    Args:
-        flat_path (str): The file path to the flat field image in FITS format.
-        dark_path (str): The file path to the dark frame in FITS format.
-    Returns:
-        numpy.ndarray or None: The corrected flat field image as a NumPy array if successful,
-        or None if the flat field image or dark frame could not be loaded.
-    """
-    """Charge et corrige le flat en soustrayant le dark."""
-    flat = load_fits(flat_path)
-    dark = load_fits(dark_path)
+def top_n_local_maxima(l, n):
+    maxima = []
 
-    print("\n🔍 Prétraitement du flat en cours...")
+    # On parcourt la liste (hors bords)
+    for i in range(1, len(l) - 1):
+        if l[i] > l[i - 1] and l[i] > l[i + 1]:
+            maxima.append((i, l[i]))
 
-    if flat is None:
-        print("❌ Impossible de traiter le flat : fichier introuvable.")
-        return None
+    # Tri par valeur décroissante
+    maxima.sort(key=lambda x: x[1], reverse=True)
 
-    if dark is not None:
-        # Affichage des statistiques avant traitement
-        print("\n📊 Statistiques avant traitement :")
-        print(
-            f"Moyenne : {np.mean(flat):.2f}, Médiane : {np.median(flat):.2f}, Écart-type : {np.std(flat):.2f}")
-        flat -= dark  # Correction du flat avec le dark
-        # Affichage des statistiques après traitement
-        print("\n📊 Statistiques après traitement :")
-        print(
-            f"Moyenne : {np.mean(flat):.2f}, Médiane : {np.median(flat):.2f}, Écart-type : {np.std(flat):.2f}")
-    else:
-        print("❌ Impossible de traiter le flat : dark manquant.")
-
-    print("✔️ Prétraitement du flat terminé.\n")
-
-    return flat
+    # Retourne les n premiers indices seulement
+    return [idx for idx, _ in maxima[:n]]
 
 
-def compute_first_derivative(image, y_positions):
+def compute_first_derivative_following_x(image, y_positions):
     """
     Compute the first derivative of specific rows in an image.
     This function calculates the first derivative along the horizontal axis
@@ -168,19 +141,109 @@ def compute_first_derivative(image, y_positions):
     return derivatives
 
 
-def compute_second_derivative(image, y_positions):
+def compute_first_derivative_following_y(image, x_positions):
+    """
+    Compute the first derivative along the y-axis for specified x positions in an image.
+    This function calculates the first derivative of pixel intensity values along 
+    the vertical axis (y-axis) for the specified x positions in the given image. 
+    The derivatives are computed using the numpy `diff` function.
+    Args:
+        image (numpy.ndarray): A 2D array representing the image, where each element 
+            corresponds to a pixel intensity value.
+        x_positions (list of int): A list of x-coordinates (column indices) for which 
+            the first derivative along the y-axis will be computed.
+    Returns:
+        dict: A dictionary where the keys are the x-coordinates from `x_positions`, 
+            and the values are 1D numpy arrays containing the first derivative values 
+            along the y-axis for the corresponding x-coordinate.
+    Example:
+        >>> import numpy as np
+        >>> image = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+        >>> x_positions = [0, 2]
+        >>> compute_first_derivative_y(image, x_positions)
+        Calcul des dérivées...
+        Position des dérivées : [0, 2]
+        Dérivées calculées.
+        {0: array([3, 3]), 2: array([3, 3])}
+    """
     """Calcule la dérivée seconde sur les lignes spécifiées."""
+
+    print("Calcul des dérivées...")
+    print("Position des dérivées :", x_positions)
+
     derivatives = {}
-    for y in y_positions:
-        row_values = image[y, :]  # Extraire la ligne horizontale à y
+    for x in x_positions:
+        row_values = image[:, x]  # Extraire la ligne horizontale à x
         first_derivative = np.diff(row_values)  # Dérivée première
-        second_derivative = np.diff(first_derivative)  # Dérivée seconde
-        derivatives[y] = second_derivative
+        derivatives[x] = first_derivative
+
+    print("Dérivées calculées.\n")
 
     return derivatives
 
 
-def detect_edges(flat_path, dark_path):
+def mean_derivative(flat):
+    # Initialisation des positions des lignes d'analyse
+    # calcul de la dérivé moyenne dans la direction y
+    print("Calcul des dérivées...")
+    print("Position des dérivées : toutes")
+    xmax = flat.shape[1]
+    derivatives = {}
+    for x in range(xmax):
+        row_values = flat[:, x]  # Extraire la ligne horizontale à y
+        first_derivative = np.diff(row_values)  # Dérivée première
+        derivatives[x] = first_derivative
+
+    print("Dérivées calculées.\n")
+
+    # calcul de la moyenne des dérivées
+    mean_derivatives = np.mean(list(derivatives.values()), axis=0)
+    return mean_derivatives
+
+
+def top_and_bottom_detection(mean_derivatives):
+    # Détection du premier et dernier pic dans la moyenne des dérivées
+    threshold = 0.1 * np.max(np.abs(mean_derivatives))
+    first_peak = None
+    for a in range(len(mean_derivatives)):
+        if np.abs(mean_derivatives[a]) > threshold:
+            first_peak = a
+            break
+
+    last_peak = None
+    for b in range(len(mean_derivatives) - 1, -1, -1):
+        if np.abs(mean_derivatives[b]) > threshold:
+            last_peak = b
+            break
+
+    if first_peak is None or last_peak is None:
+        raise ValueError(
+            "Impossible de trouver les pics dans la dérivée moyenne.")
+    return first_peak, last_peak
+
+
+def point_detection_following_x(derivatives, y_positions):
+    line1, line2, line3 = [], [], []
+
+    for idx, (y, derivative) in enumerate(derivatives.items()):
+        print("----------------------------------------------------------")
+        print(f"Analyse de la ligne y={y}")
+        print("Application du seuil")
+
+        edges_x = top_n_local_maxima(np.abs(derivative), 18)
+        filtered_points = [(xi, y) for xi in edges_x]
+
+        if y == y_positions[0]:
+            line1 = sorted(filtered_points, key=lambda point: point[0])
+        elif y == y_positions[1]:
+            line2 = sorted(filtered_points, key=lambda point: point[0])
+        elif y == y_positions[2]:
+            line3 = sorted(filtered_points, key=lambda point: point[0])
+
+    return line1, line2, line3
+
+
+def detect_edges_following_x(flat):
     """
     Processes a flat image, calculates the second derivative, and detects significant points.
     Parameters:
@@ -209,133 +272,119 @@ def detect_edges(flat_path, dark_path):
     """
 
     print("Début de la détection des bords...")
-    flat = preprocess_flat(flat_path, dark_path)
+    flat = flat.data
     if flat is None:
         return [], [], []
 
-    ymax = flat.shape[0]
-    n = 3  # Nombre de lignes d'analyse
+    # calcul de la dérivé moyenne dans la direction y
+    mean_derivatives = mean_derivative(flat)
+
+    # Détection du premier et dernier pic dans la moyenne des dérivées
+    first_peak, last_peak = top_and_bottom_detection(mean_derivatives)
 
     # Initialisation des positions des lignes d'analyse
-    y_positions = [(i * ymax) // (n+1) for i in range(1, n+1)]
-
-    # Fonction pour mettre à jour les lignes d'analyse
-    def update(val):
-        y_positions[0] = int(slider1.val)
-        y_positions[1] = int(slider2.val)
-        y_positions[2] = int(slider3.val)
-        update_plot()
-
-    # Fonction pour mettre à jour le graphique
-    def update_plot():
-        ax.clear()
-        ax.imshow(flat, cmap='gray')
-        for y in y_positions:
-            ax.axhline(y, color='r')
-        fig.canvas.draw_idle()
-
-    # Création de la figure et des sliders
-    fig, ax = plt.subplots()
-    plt.subplots_adjust(left=0.25, right=0.75, bottom=0.1, top=0.9)
-    ax.imshow(flat, cmap='gray')
-    for y in y_positions:
-        ax.axhline(y, color='r')
-
-    # Positionner les sliders sur le côté droit du graphique
-    ax_slider1 = plt.axes((0.8, 0.7, 0.15, 0.03),
-                          facecolor='lightgoldenrodyellow')
-    ax_slider2 = plt.axes((0.8, 0.6, 0.15, 0.03),
-                          facecolor='lightgoldenrodyellow')
-    ax_slider3 = plt.axes((0.8, 0.5, 0.15, 0.03),
-                          facecolor='lightgoldenrodyellow')
-
-    slider1 = Slider(ax_slider1, 'Ligne 1', 0, ymax-1,
-                     valinit=y_positions[0], valstep=1)
-    slider2 = Slider(ax_slider2, 'Ligne 2', 0, ymax-1,
-                     valinit=y_positions[1], valstep=1)
-    slider3 = Slider(ax_slider3, 'Ligne 3', 0, ymax-1,
-                     valinit=y_positions[2], valstep=1)
-
-    slider1.on_changed(update)
-    slider2.on_changed(update)
-    slider3.on_changed(update)
-
-    plt.show()
-
+    y_positions = [first_peak + 40, first_peak +
+                   (last_peak - first_peak)//2, last_peak - 40]
     print("Lignes d'analyse retenues :", y_positions)
 
     # Calcul des dérivées après avoir choisi les lignes avec les sliders
-    derivatives = compute_first_derivative(flat, y_positions)
-    seuil = 0.1
+    derivatives = compute_first_derivative_following_x(flat, y_positions)
 
-    line1, line2, line3 = [], [], []
+    # Détection des points significatifs pour chaque ligne
+    line1, line2, line3 = point_detection_following_x(derivatives, y_positions)
 
-    fig, axs = plt.subplots(2, 3, figsize=(15, 10))
-    axs = axs.flatten()
+    # Retourne les points détectés pour chaque ligne len = 18
+    return [line1, line2, line3]
 
-    for idx, (y, second_derivative) in enumerate(derivatives.items()):
+
+def x_positions_computation(be_list):
+    # trier par la première valeur du tuple
+    be_list = sorted(be_list, key=lambda x: x[0])
+
+    # Initialisation des positions des lignes d'analyse à partir de be_list
+    # On suppose que be_list contient les indices de début et de fin des zones d'intérêt (alternativement)
+    b_indices = [i for i in range(len(be_list)) if i % 2 == 0]
+    e_indices = [i for i in range(len(be_list)) if i % 2 != 0]
+
+    # Pour chaque paire (début, fin), on place deux lignes d'analyse à 1/3 et 2/3 de la distance
+    x_positions = []
+    for b_idx, e_idx in zip(b_indices, e_indices):
+        start = be_list[b_idx]
+        end = be_list[e_idx]
+        x_positions.append(int(start[0] + (end[0] - start[0]) / 3))
+        x_positions.append(int(start[0] + 2 * (end[0] - start[0]) / 3))
+    x_positions = sorted(x_positions)
+
+    print("Lignes d'analyse retenues :", x_positions)
+    
+    
+    return x_positions
+
+
+def point_detection_following_y(derivatives, x_positions):
+    detected_points = []
+
+    for idx, x in enumerate(x_positions):
         print("----------------------------------------------------------")
-        print(f"Analyse de la ligne y={y}")
+        print(f"Analyse de la ligne x={x}")
         print("Application du seuil")
-        tho = seuil * np.max(np.abs(second_derivative))  # Seuil à 10% du max
-        x_coords = np.where(np.abs(second_derivative) > tho)[
-            0]  # Détection des pics
 
-        print("Filtrage des points")
-        # Filtrer les points pour ne garder que les maximums locaux
-        filtered_points = []
-        if len(x_coords) > 0:
-            max_point = x_coords[0]
-            max_value = np.abs(second_derivative[max_point])
-            for x in x_coords[1:]:
-                if x <= max_point + 3:  # Vérifie si le point est à moins de 3 index
-                    if np.abs(second_derivative[x]) > max_value:
-                        max_point = x
-                        max_value = np.abs(second_derivative[x])
-                else:
-                    filtered_points.append((max_point, y))
-                    max_point = x
-                    max_value = np.abs(second_derivative[x])
-            filtered_points.append((max_point, y))
+        # Détection des pics locaux
+        y = top_n_local_maxima(np.abs(derivatives[x]), 2)
+        
+        # ranger les points selon x puis y
+        column = sorted([(x, yi)
+                        for yi in y], key=lambda point: (point[0], point[1]))
 
-        print("Détection des 18 maximums locaux")
-        # Garder les 18 plus grands maximums locaux sans modifier l'ordre des éléments de la liste
-        filtered_points = sorted(filtered_points, key=lambda p: np.abs(
-            second_derivative[p[0]]), reverse=True)[:18]
-        # Trier par position x pour maintenir l'ordre original
-        filtered_points.sort(key=lambda p: p[0])
+        detected_points.append(column)
 
-        if y == y_positions[0]:
-            line1 = filtered_points
-        elif y == y_positions[1]:
-            line2 = filtered_points
-        elif y == y_positions[2]:
-            line3 = filtered_points
-
-        # Affichage des dérivées et du seuil
-        axs[idx].plot(second_derivative, label=f"Dérivée (y={y})")
-        axs[idx].axhline(tho, color='r', linestyle='--', label="Seuil +")
-        axs[idx].axhline(-tho, color='r', linestyle='--', label="Seuil -")
-        axs[idx].set_title(f"Dérivée seconde pour y={y}")
-        axs[idx].legend()
-        axs[idx].set_xlabel("x")
-        axs[idx].set_ylabel("Dérivée")
-
-        # Affichage de l'intensité du flat sur la ligne horizontale y
-        axs[idx + 3].plot(flat[y, :], label=f"Intensité (y={y})", color='g')
-        axs[idx + 3].set_title(f"Intensité du flat pour y={y}")
-        axs[idx + 3].legend()
-        axs[idx + 3].set_xlabel("x")
-        axs[idx + 3].set_ylabel("Intensité")
-
-        print("Points détectés :", filtered_points)
-        print("Nombre de points détectés :", len(filtered_points))
-        print("fin de l'analyse de la ligne y=", y, '\n')
-    plt.tight_layout()
-    plt.show()
+        print("Points détectés :", y)
+        print("Nombre de points détectés :", len(y))
+        print("fin de l'analyse de la ligne x=", x, '\n')
+    return detected_points
 
 
-    detected_points = [line1, line2, line3]
+def detect_edges_following_y(flat, be_list: list[tuple]):
+    """
+    Detects significant edge points along the y-axis after correcting the flat image.
+    This function processes a flat image using a dark image for correction, calculates
+    the second derivative along the y-axis, and detects significant edge points. It
+    allows the user to interactively adjust analysis lines using sliders and returns
+    the detected points for each line.
+    Args:
+        flat_path (str): Path to the flat image file.
+        dark_path (str): Path to the dark image file.
+    Returns:
+        list[list[tuple[int, int]]]: A list of lists containing detected points for each
+        analysis line. Each inner list contains up to two tuples representing the
+        (x, y) coordinates of the detected points.
+    Notes:
+        - The function uses sliders to allow the user to adjust the positions of the
+          analysis lines interactively.
+        - The second derivative along the y-axis is computed for each analysis line,
+          and significant points are detected based on a threshold.
+        - Only the two most significant local maxima are retained for each line.
+    Example:
+        detected_points = detect_edges_y("path/to/flat_image.tif", "path/to/dark_image.tif")
+    """
+    """Corrige le flat, calcule la dérivée seconde sur y et détecte les points significatifs."""
+    print("Début de la détection des bords...")
+    n = 18
+    flat = flat.data
+    if flat is None:
+        return [[] for _ in range(n)]
+
+    # Initialisation des positions des lignes d'analyses
+    x_positions = x_positions_computation(be_list)
+
+    # Calcul des dérivées après avoir choisi les lignes avec les sliders
+    derivatives = compute_first_derivative_following_y(flat, x_positions)
+
+    # Détection des points significatifs pour chaque liqne
+    detected_points = point_detection_following_y(derivatives, x_positions)
+
+    # Retourne les points détectés pour chaque ligne shape = (18*2)
+    print("Points détectés sur y :", detected_points)
     return detected_points
 
 
@@ -385,10 +434,10 @@ def parabolic_interpolation(point1, point2, point3):
         "Équation de la parabole : f(x) = {:.2f}x^2 + {:.2f}x + {:.2f}".format(a, b, c))
     print("Interpolation parabolique terminée avec succès.\n")
 
-    return a, b, c  # Retourne les coefficients (a, b, c) de la parabole
+    return (a, b, c)  # Retourne les coefficients (a, b, c) de la parabole
 
 
-def parabolic_interpolations(points):
+# def parabolic_interpolations(points):
     """Retourne les équations de paraboles pour 18 paires de points."""
 
     if len(points) != 3 or any(len(p) != 18 for p in points):
@@ -403,180 +452,6 @@ def parabolic_interpolations(points):
         equations.append((a, b, c))
 
     return equations
-
-
-def compute_first_derivative_y(image, x_positions):
-    """
-    Compute the first derivative along the y-axis for specified x positions in an image.
-    This function calculates the first derivative of pixel intensity values along 
-    the vertical axis (y-axis) for the specified x positions in the given image. 
-    The derivatives are computed using the numpy `diff` function.
-    Args:
-        image (numpy.ndarray): A 2D array representing the image, where each element 
-            corresponds to a pixel intensity value.
-        x_positions (list of int): A list of x-coordinates (column indices) for which 
-            the first derivative along the y-axis will be computed.
-    Returns:
-        dict: A dictionary where the keys are the x-coordinates from `x_positions`, 
-            and the values are 1D numpy arrays containing the first derivative values 
-            along the y-axis for the corresponding x-coordinate.
-    Example:
-        >>> import numpy as np
-        >>> image = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-        >>> x_positions = [0, 2]
-        >>> compute_first_derivative_y(image, x_positions)
-        Calcul des dérivées...
-        Position des dérivées : [0, 2]
-        Dérivées calculées.
-        {0: array([3, 3]), 2: array([3, 3])}
-    """
-    """Calcule la dérivée seconde sur les lignes spécifiées."""
-
-    print("Calcul des dérivées...")
-    print("Position des dérivées :", x_positions)
-
-    derivatives = {}
-    for x in x_positions:
-        row_values = image[:, x]  # Extraire la ligne horizontale à x
-        first_derivative = np.diff(row_values)  # Dérivée première
-        derivatives[x] = first_derivative
-
-    print("Dérivées calculées.\n")
-
-    return derivatives
-
-
-def compute_second_derivative_y(image, x_positions):
-    """Calcule la dérivée seconde sur les lignes spécifiées."""
-    derivatives = {}
-    for x in x_positions:
-        row_values = image[:, x]  # Extraire la ligne horizontale à x
-        first_derivative = np.diff(row_values)  # Dérivée première
-        second_derivative = np.diff(first_derivative)  # Dérivée seconde
-        derivatives[x] = second_derivative
-
-    return derivatives
-
-
-def detect_edges_y(flat_path, dark_path,n):
-    """
-    Detects significant edge points along the y-axis after correcting the flat image.
-    This function processes a flat image using a dark image for correction, calculates
-    the second derivative along the y-axis, and detects significant edge points. It
-    allows the user to interactively adjust analysis lines using sliders and returns
-    the detected points for each line.
-    Args:
-        flat_path (str): Path to the flat image file.
-        dark_path (str): Path to the dark image file.
-    Returns:
-        list[list[tuple[int, int]]]: A list of lists containing detected points for each
-        analysis line. Each inner list contains up to two tuples representing the
-        (x, y) coordinates of the detected points.
-    Notes:
-        - The function uses sliders to allow the user to adjust the positions of the
-          analysis lines interactively.
-        - The second derivative along the y-axis is computed for each analysis line,
-          and significant points are detected based on a threshold.
-        - Only the two most significant local maxima are retained for each line.
-    Example:
-        detected_points = detect_edges_y("path/to/flat_image.tif", "path/to/dark_image.tif")
-    """
-    """Corrige le flat, calcule la dérivée seconde sur y et détecte les points significatifs."""
-    print("Début de la détection des bords...")
-    flat = preprocess_flat(flat_path, dark_path)
-    if flat is None:
-        return [[] for _ in range(18)]
-
-    xmax = flat.shape[1]
-    
-    n = 2*n
-    # Initialisation des positions des lignes d'analyse
-    x_positions = [(i * xmax) // (n+1) for i in range(1, n+1)]
-
-    # Fonction pour mettre à jour les lignes d'analyse
-    def update(val):
-        for i in range(n):
-            x_positions[i] = int(sliders[i].val)
-        update_plot()
-
-    # Fonction pour mettre à jour le graphique
-    def update_plot():
-        ax.clear()
-        ax.imshow(flat, cmap='gray')
-        for x in x_positions:
-            ax.axvline(x, color='r')
-        fig.canvas.draw_idle()
-
-    # Création de la figure et des sliders
-    fig, ax = plt.subplots()
-    # Ajuster pour laisser plus de place aux sliders
-    plt.subplots_adjust(left=0.25, right=0.75, bottom=0.2, top=0.95)
-    ax.imshow(flat, cmap='gray')
-    for x in x_positions:
-        ax.axvline(x, color='r')
-
-    sliders = []
-    for i in range(n):
-        # Positionner les sliders plus haut
-        ax_slider = plt.axes((0.8, 0.9 - i*0.05, 0.15, 0.03),
-                             facecolor='lightgoldenrodyellow')
-        slider = Slider(
-            ax_slider, f'Ligne {i+1}', 0, xmax-1, valinit=x_positions[i], valstep=1)
-        slider.on_changed(update)
-        sliders.append(slider)
-
-    plt.show()
-
-    print("Lignes d'analyse retenues :", x_positions)
-
-    # Calcul des dérivées après avoir choisi les lignes avec les sliders
-    derivatives = compute_first_derivative_y(flat, x_positions)
-    seuil = 0
-
-    detected_points = [[] for _ in range(n)]
-
-    for idx, x in enumerate(x_positions):
-        print("----------------------------------------------------------")
-        print(f"Analyse de la ligne x={x}")
-        print("Application du seuil")
-
-        second_derivative = derivatives[x]
-        tho = seuil * np.max(np.abs(second_derivative))  # Seuil à 10% du max
-        y_coords = np.where(np.abs(second_derivative) > tho)[
-            0]  # Détection des pics
-
-        print("Filtrage des points")
-        # Filtrer les points pour ne garder que les maximums locaux
-        filtered_points = []
-        if len(y_coords) > 0:
-            max_point = y_coords[0]
-            max_value = np.abs(second_derivative[max_point])
-            for y in y_coords[1:]:
-                if y == max_point + 1:
-                    if np.abs(second_derivative[y]) > max_value:
-                        max_point = y
-                        max_value = np.abs(second_derivative[y])
-                else:
-                    filtered_points.append((x, max_point))
-                    max_point = y
-                    max_value = np.abs(second_derivative[y])
-            filtered_points.append((x, max_point))
-
-        print("Détection des 2 maximums locaux")
-        # Garder les 2 plus grands maximums locaux sans modifier l'ordre des éléments de la liste
-        filtered_points = sorted(filtered_points, key=lambda p: np.abs(
-            second_derivative[p[1]]), reverse=True)[:2]
-        # Trier par position y pour maintenir l'ordre original
-        filtered_points.sort(key=lambda p: p[1])
-
-        detected_points[idx] = filtered_points
-
-        print("Points détectés :", filtered_points)
-        print("Nombre de points détectés :", len(filtered_points))
-        print("fin de l'analyse de la ligne x=", x, '\n')
-
-    # Retourne les points détectés pour chaque ligne shape = (18*2)
-    return detected_points
 
 
 def line_coefficients(point1, point2):
@@ -614,91 +489,28 @@ def line_coefficients(point1, point2):
     return a, b
 
 
-def compute_lines_coefficients(detected_columns):
-    """Calculate the coefficients (a, b) of lines formed by pairs of columns 
-    from a list of detected points.
-    This function takes a list of 18 sublists, where each sublist contains 
-    points representing detected columns. It computes the coefficients of 
-    the lines formed by pairs of columns (e.g., columns 1&2, 3&4, ..., 15&16). 
-    The coefficients are calculated for both the top and bottom points of 
-    each pair of columns.
-    Args:
-        detected_columns (list): A list of 18 sublists, where each sublist 
-        contains two points representing a detected column.
-    Returns:
-        list: A list of tuples representing the coefficients (a, b) of the 
-        lines for each pair of columns. Each pair contributes two tuples 
-        (one for the top points and one for the bottom points).
-    Raises:
-        ValueError: If there is an error during the calculation of the 
-        coefficients for any pair of columns.
-    Notes:
-        - If the input list contains fewer than 18 columns, an error message 
-          is printed, and the function returns None.
-        - If a problem is encountered during the calculation of coefficients, 
-          the function appends default coefficients (0, 0) for the problematic 
-          pair and raises a ValueError."""
-    """
-    Prend une liste de 18 listes de points et calcule les coefficients (a, b)
-    des droites formées par les colonnes 1&2, 3&4, ..., 15&16.
-    """
-    if len(detected_columns) < 18:
-        print("Erreur : la liste doit contenir 18 colonnes de points.")
-        return None
-
-    lines_coefficients = []
-
-    for i in range(0, 18, 2):  # Boucle sur les paires (0&1, 2&3, ..., 14&15)
-        coeffs_h = line_coefficients(
-            detected_columns[i][0], detected_columns[i+1][0])
-        coeffs_b = line_coefficients(
-            detected_columns[i][1], detected_columns[i+1][1])
-        if coeffs_h:
-            lines_coefficients.append(coeffs_h)
-            lines_coefficients.append(coeffs_b)
-        else:
-            # si un problème est rencontré déclencher une exception
-            print("coeffs_h", coeffs_h)
-            print("coeffs_b", coeffs_b)
-            lines_coefficients.append((0, 0))
-            lines_coefficients.append((0, 0))
-            raise ValueError(
-                "Erreur lors du calcul des coefficients de la droite.")
-
-    return lines_coefficients
-
-
-def get_parallelogram_equations(parabolas, lines, quadrilateral_index):
+def get_parallelogram_equations(parabolas, lines) -> tuple[tuple, tuple, tuple, tuple]:
     """
     Retourne les équations des bords d'un parallélogramme pour un quadrilatère spécifié.
 
     Args:
-        parabolas (list): Liste des coefficients des paraboles [(a, b, c), ...].
-        lines (list): Liste des coefficients des droites [(a, b), ...].
+        parabolas (list): Liste des coefficients des paraboles [(a1, b1, c1), (a2, b2, c2)].
+        lines (list): Liste des coefficients des droites [(a1, b1), (a2, b2)].
         quadrilateral_index (int): Indice du quadrilatère voulu (de 1 à 9).
 
     Returns:
         tuple: 4 tuples correspondant aux équations des bords du parallélogramme.
     """
-    if len(parabolas) != 18 or len(lines) != 18:
-        raise ValueError(
-            "Les listes de coefficients doivent contenir exactement 18 éléments chacune.")
-
-    if quadrilateral_index < 1 or quadrilateral_index > 9:
-        raise ValueError(
-            "L'indice du quadrilatère doit être compris entre 1 et 9.")
-
     print("----------------------------------------------------------")
     print(
-        f"Début de la récupération des équations pour le quadrilatère {quadrilateral_index}...")
+        f"Début de la récupération des équations...")
     # Calculer l'indice de base pour le quadrilatère spécifié
-    base_index = (quadrilateral_index - 1) * 2
 
     # Récupérer les équations des bords du parallélogramme
-    left_edge = parabolas[base_index]  # Parabole gauche (indice pair)
-    right_edge = parabolas[base_index + 1]  # Parabole droite (indice impair)
-    top_edge = lines[base_index]  # Droite haute (indice pair)
-    bottom_edge = lines[base_index + 1]  # Droite basse (indice impair)
+    left_edge = parabolas[0]  # Parabole gauche (indice pair)
+    right_edge = parabolas[1]  # Parabole droite (indice impair)
+    top_edge = lines[0]  # Droite haute (indice pair)
+    bottom_edge = lines[1]  # Droite basse (indice impair)
 
     print("Équations des bords récupérées avec succès.")
     print("Parabole gauche :", left_edge)
@@ -709,7 +521,7 @@ def get_parallelogram_equations(parabolas, lines, quadrilateral_index):
     return left_edge, right_edge, top_edge, bottom_edge
 
 
-def find_intersection(parabola, line, near_point, point_name, quadrilateral_index):
+def find_intersection(parabola: tuple, line: tuple, near_point, point_name, quadrilateral_index):
     """
     Trouve l'intersection entre une parabole et une droite.
 
@@ -729,7 +541,7 @@ def find_intersection(parabola, line, near_point, point_name, quadrilateral_inde
         f"Début de la recherche de l'intersection pour le point '{point_name}' du quadrilatère {quadrilateral_index}...")
 
     a_p, b_p, c_p = parabola
-    a_l, b_l = line
+    a_l, b_l ,c_l = line
 
     # Résoudre l'équation quadratique a_p*x^2 + (b_p - a_l)*x + (c_p - b_l) = 0
     A = a_p
@@ -768,8 +580,8 @@ def find_quadrilateral_corners(parabolas, lines, quadrilateral_index, near_point
     Trouve les 4 coins d'un quadrilatère spécifié par son indice.
 
     Args:
-        parabolas (list): Liste des coefficients des paraboles [(a, b, c), ...].
-        lines (list): Liste des coefficients des droites [(a, b), ...].
+        parabolas (list): Liste des coefficients des paraboles [(a1, b1, c1), (a2, b2, c2)].
+        lines (list): Liste des coefficients des droites [(a1, b1), (a2, b2, c2)].
         quadrilateral_index (int): Indice du quadrilatère voulu (de 1 à 9).
         near_points (list): Liste des points proches pour guider les intersections.
 
@@ -782,7 +594,7 @@ def find_quadrilateral_corners(parabolas, lines, quadrilateral_index, near_point
         f"Début de la détermination des coins pour le quadrilatère {quadrilateral_index}...")
 
     left_edge, right_edge, top_edge, bottom_edge = get_parallelogram_equations(
-        parabolas, lines, quadrilateral_index)
+        parabolas, lines)
 
     top_left = find_intersection(
         left_edge, top_edge, near_points[0], "top_left", quadrilateral_index)
@@ -802,7 +614,7 @@ def find_quadrilateral_corners(parabolas, lines, quadrilateral_index, near_point
     return [top_left, top_right, bottom_left, bottom_right]
 
 
-def crop(image, corners):
+def crop(image, corners, quadrilateral_index):
     """
     Recadre une image en utilisant les 4 coins d'un quadrilatère et met à 0 les points en dehors du quadrilatère.
 
@@ -846,7 +658,9 @@ def crop(image, corners):
     cropped_image = np.zeros_like(image)
     cropped_image[inside] = image[inside]
     print("Recadrage terminé.\n")
-
+    plt.imshow(cropped_image, cmap='gray')
+    plt.title(f"Quadrilatère {quadrilateral_index}")
+    plt.show()
     return cropped_image
 
 
@@ -868,67 +682,35 @@ def display_detected_points(flat, detected_points, detected_points_h):
     # plt.show()
 
 
-def display_parabolas_and_lines(flat, parabolas, lines):
-    for i in range(9):
-        plt.figure(figsize=(8, 8))
-        plt.imshow(flat, cmap='gray', extent=[
-                   0, flat.shape[1], flat.shape[0], 0])
-
-        left_edge, right_edge, top_edge, bottom_edge = get_parallelogram_equations(
-            parabolas, lines, i + 1)
-
-        x = np.arange(0, flat.shape[1])
-        y_left = left_edge[0] * x ** 2 + left_edge[1] * x + left_edge[2]
-        y_right = right_edge[0] * x ** 2 + right_edge[1] * x + right_edge[2]
-        plt.plot(x, y_left, 'r', label="Parabole gauche")
-        plt.plot(x, y_right, 'b', label="Parabole droite")
-
-        y_top = top_edge[0] * x + top_edge[1]
-        y_bottom = bottom_edge[0] * x + bottom_edge[1]
-        plt.plot(x, y_top, 'g', label="Ligne haute")
-        plt.plot(x, y_bottom, 'm', label="Ligne basse")
-
-        plt.xlim(0, flat.shape[1])
-        plt.ylim(flat.shape[0], 0)
-        plt.title(f"Quadrilatère {i + 1}")
-        plt.legend()
-        # plt.show()
-
-
-def process_quadrilaterals(flat, parabolas, lines, detected_points_h, image_path):
-    transformed_points_h = []
-    for i in range(0, len(detected_points_h), 2):
-        combined_points = detected_points_h[i] + detected_points_h[i + 1]
-        transformed_points_h.append(combined_points)
-
-    lcorners = []
-    for quadrilateral_index in range(1, 10):
-        near_points = transformed_points_h[quadrilateral_index - 1]
-        corners = find_quadrilateral_corners(
-            parabolas, lines, quadrilateral_index, near_points)
-        if None in corners:
-            print("Erreur lors de la détermination des coins du quadrilatère.")
-            return None, None, None, None
-        lcorners.append(corners)
-
-        # display_quadrilateral_corners(flat, corners, quadrilateral_index)
-
-        image = load_fits(image_path)
-        if image is None:
-            print("Erreur lors du chargement de l'image.")
-            return None, None, None, None
-
-        cropped_image = crop(image, corners)
-        # display_cropped_image(cropped_image, quadrilateral_index)
+def display_parabolas_and_lines(flat, channel):
+    edges = [edge for edge in channel.edges]
+    parabolas = [edge.coefficients()
+                        for edge in edges if "parabole" in edge.type]
+    lines = [edge.coefficients()
+                    for edge in edges if "parabole" not in edge.type]
     
-    Cs, Fs, Ds, As = [], [], [], []
-    for corner in lcorners:
-        Cs.append(corner[0])
-        Fs.append(corner[1])
-        Ds.append(corner[2])
-        As.append(corner[3])
-    return Cs, Fs, Ds, As
-    
+    plt.figure(figsize=(8, 8))
+    plt.imshow(flat.data, cmap='gray')
+
+    left_edge, right_edge, top_edge, bottom_edge = get_parallelogram_equations(
+        parabolas, lines)
+
+    x = np.arange(0, flat.shape[1])
+    y_left = left_edge[0] * x ** 2 + left_edge[1] * x + left_edge[2]
+    y_right = right_edge[0] * x ** 2 + right_edge[1] * x + right_edge[2]
+    plt.plot(x, y_left, 'r', label="Parabole gauche")
+    plt.plot(x, y_right, 'b', label="Parabole droite")
+
+    y_top = top_edge[0] * x + top_edge[1]
+    y_bottom = bottom_edge[0] * x + bottom_edge[1]
+    plt.plot(x, y_top, 'g', label="Ligne haute")
+    plt.plot(x, y_bottom, 'm', label="Ligne basse")
+
+    plt.xlim(0, flat.shape[1])
+    plt.ylim(flat.shape[0], 0)
+    plt.title(f"Quadrilatère {channel.id}")
+    plt.legend()
+    plt.show()
 
 
 def display_quadrilateral_corners(flat, corners, quadrilateral_index):
@@ -942,12 +724,6 @@ def display_quadrilateral_corners(flat, corners, quadrilateral_index):
     # plt.show()
 
 
-def display_cropped_image(cropped_image, quadrilateral_index):
-    plt.imshow(cropped_image, cmap='gray')
-    plt.title(f"Quadrilatère {quadrilateral_index}")
-    # plt.show()
-
-
 def display_start():
     print("__________________________________________________________")
     print("Exécution du programme de traitement d'images multicannaux")
@@ -958,11 +734,12 @@ def display_start():
     print("MEIN Pierre, SAYEDE Frédéric de l'Observatoire de Paris")
     print("----------------------------------------------------------\n")
 
+
 def statistiques(cs, fs, bs, es, as_, ds, ls, ns, ks, ms, Cs, Fs, Ds, As):
     # Création des derniers points pour les calculs
     Bs = bs
     Es = es
-    
+
     # Calcul des vecteurs DE, AB, DF, AC, CF, BE, AD
     DE = [np.array(d) - np.array(e) for d, e in zip(Ds, Es)]
     AB = [np.array(a) - np.array(b) for a, b in zip(As, Bs)]
@@ -971,7 +748,7 @@ def statistiques(cs, fs, bs, es, as_, ds, ls, ns, ks, ms, Cs, Fs, Ds, As):
     CF = [np.array(f) - np.array(c) for f, c in zip(Fs, Cs)]
     BE = [np.array(b) - np.array(e) for b, e in zip(Bs, Es)]
     AD = [np.array(a) - np.array(d) for a, d in zip(As, Ds)]
-    
+
     # Vérification que tous les vecteurs sont des listes de tableaux NumPy
     vectors = [DE, AB, DF, AC, CF, BE, AD]
     labels = ["DE", "AB", "DF", "AC", "CF", "BE", "AD"]
@@ -979,7 +756,8 @@ def statistiques(cs, fs, bs, es, as_, ds, ls, ns, ks, ms, Cs, Fs, Ds, As):
     for i, vector in enumerate(vectors):
         if not all(isinstance(v, np.ndarray) and v.shape == (2,) for v in vector):
             print(f"Erreur dans le vecteur {labels[i]} : {vector}")
-            vectors[i] = [np.array([0, 0])] * len(vector)  # Remplacement par des vecteurs nuls
+            # Remplacement par des vecteurs nuls
+            vectors[i] = [np.array([0, 0])] * len(vector)
 
     # Plot des x, des y et du module de chaque vecteur dans un subplot
     fig, axs = plt.subplots(7, 3, figsize=(15, 15))
@@ -988,7 +766,7 @@ def statistiques(cs, fs, bs, es, as_, ds, ls, ns, ks, ms, Cs, Fs, Ds, As):
     axs[i, 0].set_title("Composante X")
     axs[i, 1].set_title("Composante Y")
     axs[i, 2].set_title("Module")
-    
+
     for i, (vector, label) in enumerate(zip(vectors, labels)):
         # Composante X
         x_values = [v[0] for v in vector]
@@ -997,8 +775,9 @@ def statistiques(cs, fs, bs, es, as_, ds, ls, ns, ks, ms, Cs, Fs, Ds, As):
         axs[i, 0].plot(normalized_x, marker='o', label=f"{label}")
         # Courbe de tendance pour X
         trend_x = np.polyfit(range(len(normalized_x)), normalized_x, 2)
-        axs[i, 0].plot(range(len(normalized_x)), np.polyval(trend_x, range(len(normalized_x))), linestyle='--')
-        
+        axs[i, 0].plot(range(len(normalized_x)), np.polyval(
+            trend_x, range(len(normalized_x))), linestyle='--')
+
         # Composante Y
         y_values = [v[1] for v in vector]
         min_y = min(y_values)
@@ -1006,26 +785,29 @@ def statistiques(cs, fs, bs, es, as_, ds, ls, ns, ks, ms, Cs, Fs, Ds, As):
         axs[i, 1].plot(normalized_y, marker='o', label=f"{label}")
         # Courbe de tendance pour Y
         trend_y = np.polyfit(range(len(normalized_y)), normalized_y, 2)
-        axs[i, 1].plot(range(len(normalized_y)), np.polyval(trend_y, range(len(normalized_y))), linestyle='--')
-        
+        axs[i, 1].plot(range(len(normalized_y)), np.polyval(
+            trend_y, range(len(normalized_y))), linestyle='--')
+
         # Module
         module = [np.sqrt(v[0]**2 + v[1]**2) for v in vector]
         min_module = min(module)
         normalized_module = [m - min_module for m in module]
         axs[i, 2].plot(normalized_module, marker='o', label=f"{label}")
         # Courbe de tendance pour le module
-        trend_module = np.polyfit(range(len(normalized_module)), normalized_module, 2)
-        axs[i, 2].plot(range(len(normalized_module)), np.polyval(trend_module, range(len(normalized_module))), linestyle='--')
-        
+        trend_module = np.polyfit(
+            range(len(normalized_module)), normalized_module, 2)
+        axs[i, 2].plot(range(len(normalized_module)), np.polyval(
+            trend_module, range(len(normalized_module))), linestyle='--')
+
         axs[i, 0].legend()
         axs[i, 1].legend()
         axs[i, 2].legend()
-        
+
         # Fix y-axis limits for comparison
         axs[i, 0].set_ylim(0, 3)
         axs[i, 1].set_ylim(0, 3)
         axs[i, 2].set_ylim(0, 3)
-    
+
     axs[i, 0].set_xlabel("Index")
     axs[i, 1].set_xlabel("Index")
     axs[i, 2].set_xlabel("Index")
@@ -1040,146 +822,8 @@ def display_end():
     print("__________________________________________________________")
 
 
-def main():
-    # Affiche les informations de démarrage du programme
-    display_start()
-
-    # Chemins des fichiers nécessaires
-    flat_path = "flat.fits"  # Chemin du fichier flat
-    dark_path = "dark.fits"  # Chemin du fichier dark
-    image_path = "image.fits"  # Chemin de l'image à traiter
-
-    # Prétraitement du flat avec le dark
-    flat = preprocess_flat(flat_path, dark_path)
-    if flat is None:
-        print("Erreur lors du chargement du flat.")
-        return
-
-    # Détection des bords horizontaux sur le flat
-    detected_points = detect_edges(
-        flat_path, dark_path)
-    if not detected_points[0] or not detected_points[1] or not detected_points[2]:
-        print("Erreur lors de la détection des bords.")
-        return
-    
-    # récupérations des points détéctés pour les bords verticaux:    
-    cs = []
-    fs = []
-    bs = []
-    es = []
-    as_ = []
-    ds = []
-    for i in range(0, len(detected_points[0])):
-        if i % 2 == 0:
-            cs.append(detected_points[0][i])
-            bs.append(detected_points[1][i])
-            as_.append(detected_points[2][i])
-        else :
-            fs.append(detected_points[0][i])
-            es.append(detected_points[1][i])
-            ds.append(detected_points[2][i])
-            
-    """
-             |    |
-             |    |
-          C  l    n   F
-            ##########
-            ##########
-----------c ########## f----------
-            ##########
-            ##########
-            ##########
-------B = b ########## e = E------
-            ##########
-            ##########
-----------a ########## d----------
-            ##########
-            ##########
-          A  k    m   D
-             |    |
-             |    |
-    """ 
-        
-        
-    
-    n = 9
-    # Détection des bords verticaux sur le flat
-    detected_points_h = detect_edges_y(flat_path, dark_path,n)
-    if not detected_points_h:
-        print("Erreur lors de la détection des bords.")
-        return
-    
-    # Récupérations des points détéctés pour les bords horizontaux:
-    ls = []
-    ks = []
-    ns = []
-    ms = []
-    for i in range(0, len(detected_points_h)):
-        if i % 2 == 0:
-            ls.append(detected_points_h[i][0])
-            ks.append(detected_points_h[i][1])
-        else :
-            ns.append(detected_points_h[i][0])
-            ms.append(detected_points_h[i][1])
-
-        
-    # Affichage des points détectés sur l'image flat pour le premier canal
-    plt.figure(figsize=(10, 10))
-    plt.imshow(flat, cmap='gray', extent=[0, flat.shape[1], flat.shape[0], 0])
-
-    # Afficher le premier point de chaque liste avec une couleur et une légende différente
-    if as_:
-        plt.plot(as_[0][0], as_[0][1], 'ro', label='Point A (as_)')
-    if bs:
-        plt.plot(bs[0][0], bs[0][1], 'go', label='Point B (bs)')
-    if cs:
-        plt.plot(cs[0][0], cs[0][1], 'bo', label='Point C (cs)')
-    if ds:
-        plt.plot(ds[0][0], ds[0][1], 'yo', label='Point D (ds)')
-    if es:
-        plt.plot(es[0][0], es[0][1], 'mo', label='Point E (es)')
-    if fs:
-        plt.plot(fs[0][0], fs[0][1], 'co', label='Point F (fs)')
-    if ks:
-        plt.plot(ks[0][0], ks[0][1], 'r*', label='Point K (ks)')
-    if ls:
-        plt.plot(ls[0][0], ls[0][1], 'g*', label='Point L (ls)')
-    if ms:
-        plt.plot(ms[0][0], ms[0][1], 'b*', label='Point M (ms)')
-    if ns:
-        plt.plot(ns[0][0], ns[0][1], 'y*', label='Point N (ns)')
-
-    plt.legend()
-    plt.title("Premier point de chaque liste affiché sur l'image flat")
-    plt.xlim(0, flat.shape[1])
-    plt.ylim(flat.shape[0], 0)
-    plt.show()
-
-    # Affichage des points détectés sur l'image flat
-    # display_detected_points(
-    #     flat, detected_points, detected_points_h)
-
-    # Calcul des équations des paraboles pour les bords horizontaux
-    parabolas = parabolic_interpolations(
-        detected_points)
-    # Calcul des coefficients des droites pour les bords verticaux
-    lines = compute_lines_coefficients(detected_points_h)
-    if not parabolas or not lines:
-        print("Erreur lors du calcul des coefficients.")
-        return
-
-    # Affichage des paraboles et des droites détectées sur l'image flat
-    # display_parabolas_and_lines(flat, parabolas, lines)
-
-    # Traitement des quadrilatères détectés dans l'image
-    Cs, Fs, Ds, As = process_quadrilaterals(flat, parabolas, lines, detected_points_h, image_path)
-    
-    # affichage des statistiques :
-    statistiques(cs, fs, bs, es, as_, ds, ls, ks, ns, ms, Cs, Fs, Ds, As)
-
-    # Affiche les informations de fin du programme
-    display_end()
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    pass

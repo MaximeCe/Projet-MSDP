@@ -1,4 +1,5 @@
 from image import Image
+import tools
 
 
 def main():
@@ -27,11 +28,18 @@ def main():
     
     image.afficher(points)
     
+    
     print("\nPoints majuscule du premier canal (A–F) :")
     points = first_channel.points_final.values()
+
+    # Ranger les points dans l'ordre alphabétique
+    points = sorted(points, key=lambda p: p.nom)
     for point in points:
         print(f"  - {point.nom} : ({point.x:.1f}, {point.y:.1f})")
     image.afficher(points)
+    
+    # addicher les bords du canal
+    tools.display_parabolas_and_lines(image, first_channel)
 
 
 
