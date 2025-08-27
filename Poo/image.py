@@ -2,6 +2,7 @@ from solar_channel import SolarChannel
 from channel import Channel  
 from tools.detector import Detector
 from tools.io import Io
+import numpy as np
 
 class Image:
     def __init__(self, image_path, master_dark=None, nombre_canaux=9):
@@ -18,15 +19,25 @@ class Image:
         # Création des canaux
         self.channels = []
         self.create_channels()
+        
 
-        # affichage des points détectés pour vérification
-        for canal in self.channels:
-            self.afficher(points=[p for p in canal.points.values() if p])
+        # # affichage des points détectés pour vérification
+        # for canal in self.channels:
+        #     self.afficher(points=[p for p in canal.points.values() if p])
 
         # Création des canaux solaires
         self.solar_channels = []
         self.create_solar_channels()
-
+        
+        # Paramètre de calibration en lambda
+        self.t1_mm = 2.5
+        self.t2_mm = 9.0
+        self.Wij = np.mean(
+            [np.sqrt((canal.points_final["D"].x-canal.points_final["A"].x)**2+(canal.points_final["D"].y-canal.points_final["A"].y)**2) for canal in self.channels])
+        self.Tgij = np.mean(
+            [self.channels[i+1].points_final["A"].x-self.channels[i].points_final["A"].x for i in range(len(self.channels)-1) if self.channels[i].points_final])
+        self.W = np.mean([canal.resolution[0] for canal in self.solar_channels if canal.resolution])
+        self.Ts = self.Tgij*self.W*self.t1_mm/(self.t2_mm*self.Wij)
 
 
     def load_and_process_image(self):
@@ -125,8 +136,8 @@ class Image:
                             (pf["D"].x, pf["D"].y),
                             (pf["A"].x, pf["A"].y),
                         ]
-                # Affichage de canal.points pour vérification
-                print(f"Canal {canal.id} points: { canal.points}")
+                ## Affichage de canal.points pour vérification
+                # print(f"Canal {canal.id} points: { canal.points}")
                         
                 
                 solar_channel = SolarChannel(
@@ -160,3 +171,4 @@ class Image:
             plt.show()
         else:
             raise ValueError("Les données de l'image sont vides. Impossible d'afficher l'image.")
+
