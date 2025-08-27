@@ -1,3 +1,4 @@
+from solar_channel import SolarChannel
 from channel import Channel  
 from tools.detector import Detector
 from tools.io import Io
@@ -8,13 +9,23 @@ class Image:
         self.master_dark = master_dark
         self.nombre_canaux = nombre_canaux
 
+        # Création et traitement de l'image
         self.resolution = None
         self.data = None
         self.load_and_process_image()
         self.shape = self.data.shape if self.data is not None else (0, 0)
-        self.channels = []
 
+        # Création des canaux
+        self.channels = []
         self.create_channels()
+
+        # affichage des points détectés pour vérification
+        for canal in self.channels:
+            self.afficher(points=[p for p in canal.points.values() if p])
+
+        # Création des canaux solaires
+        self.solar_channels = []
+        self.create_solar_channels()
 
 
 
@@ -36,14 +47,8 @@ class Image:
         self.resolution = f"{self.data.shape[1]}x{self.data.shape[0]}"
 
 
-    def create_channels(self):
-        """Crée les canaux après détection des points initiaux."""
-        print("🔍 Détection des points pour les canaux...")
 
-        # Appliquer le dark au flat et détecter les points
-        flat_path = "flat.fits"
-        dark_path = self.master_dark
-
+    def create_points_dict(self):
         # Détection horizontale (3 lignes → 18 points pour chaque)
         detected = Detector.detect_edges_x(self)
         if not all(detected):
@@ -77,16 +82,65 @@ class Image:
                 ms.append(detected_h[i][1])
 
         # Regrouper les points dans un dict
-        data_dict = {
+        points_dict = {
             "as_": as_, "bs": bs, "cs": cs, "ds": ds, "es": es, "fs": fs,
             "ks": ks, "ls": ls, "ms": ms, "ns": ns
         }
-        print(data_dict)
+        return points_dict
+    
+    def create_channels(self):
+        points_dict = self.create_points_dict()
         # Créer les canaux à partir des données
         for i in range(self.nombre_canaux):
-            canal = Channel(id=i + 1, image=self, index=i, data=data_dict)
+            canal = Channel(id=i + 1, image=self, index=i, points=points_dict)
             self.channels.append(canal)
 
+
+    def create_solar_channels(self):
+        """Crée les canaux solaires normalisés à partir des canaux détectés."""
+        print("🔄 Création des canaux solaires normalisés...")
+        
+        points_dict = self.create_points_dict()
+        
+        for i, canal in enumerate(self.channels):
+            
+            # Récupérer les paraboles (gauche, droite, haut, bas) pour chaque canal
+            paraboles = [edge.coefficients()
+                                           for edge in canal.edges if "parabole" in edge.type]
+            droites = [edge.coefficients()
+                                         for edge in canal.edges if "parabole" not in edge.type]
+            # Ordre attendu : [gauche, droite, haut, bas]
+            if len(paraboles) == 2 and len(droites) == 2:
+                # On suppose l'ordre des edges : [parabole_gauche, parabole_droite, droite_haut, droite_bas]
+                paraboles_ordre = paraboles + droites
+                # Récupérer les coins si calculés
+                corners = None
+                if hasattr(canal, "points_final") and canal.points_final:
+                    # Ordre: [haut-gauche, haut-droit, bas-droit, bas-gauche]
+                    pf = canal.points_final
+                    if all(k in pf for k in ["C", "F", "D", "A"]):
+                        corners = [
+                            (pf["C"].x, pf["C"].y),
+                            (pf["F"].x, pf["F"].y),
+                            (pf["D"].x, pf["D"].y),
+                            (pf["A"].x, pf["A"].y),
+                        ]
+                # Affichage de canal.points pour vérification
+                print(f"Canal {canal.id} points: { canal.points}")
+                        
+                
+                solar_channel = SolarChannel(
+                    id=canal.id,
+                    image=self,
+                    index=i,
+                    points=points_dict,
+                    paraboles=paraboles_ordre,
+                    output_shape=None,
+                    corners=corners
+                )
+                self.solar_channels.append(solar_channel)
+            else:
+                print(f"⚠️ Canal {canal.id}: paraboles/droites manquantes, canal solaire non créé.")
 
     def __str__(self):
         return f"Image(resolution={self.resolution}, canaux={len(self.channels)})"

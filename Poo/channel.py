@@ -4,7 +4,7 @@ from tools.computation import Computation
 
 
 class Channel:
-    def __init__(self, id, image, index, data):
+    def __init__(self, id, image, index, points):
         """
         :param id: identifiant unique du canal (1 à 9)
         :param image: instance de la classe Image
@@ -18,15 +18,15 @@ class Channel:
         self.edges = []
         self.points_final = {}
 
-        self.load_points_from_data(data)
+        self.load_points(points)
         self.build_edges()
         self.compute_corners()
 
-    def load_points_from_data(self, data):
+    def load_points(self, points):
         """Charge les points a-f, k-n depuis les structures as_, bs, etc."""
         noms = ['a', 'b', 'c', 'd', 'e', 'f', 'k', 'l', 'm', 'n']
         for nom in noms:
-            liste = data.get(f"{nom}s") or data.get(f"{nom}s_")
+            liste = points.get(f"{nom}s") or points.get(f"{nom}s_")
             if liste and len(liste) > self.index:
                 x, y = liste[self.index]
                 self.points[nom] = Point(nom, x, y, self)
