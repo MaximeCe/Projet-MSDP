@@ -1,4 +1,6 @@
+from matplotlib import lines
 from image import Image
+from tools.display import Display
 
 
 def main():
@@ -9,7 +11,6 @@ def main():
         image_path="image.fits",
         master_dark="dark.fits"
     )
-
 
     print(image)
     # image.afficher()
@@ -27,13 +28,22 @@ def main():
     
     image.afficher(points)
     
+    
     print("\nPoints majuscule du premier canal (A–F) :")
     points = first_channel.points_final.values()
+
+    # Ranger les points dans l'ordre alphabétique
+    points = sorted(points, key=lambda p: p.nom)
     for point in points:
         print(f"  - {point.nom} : ({point.x:.1f}, {point.y:.1f})")
     image.afficher(points)
-
+    
+    # afficher les bords du canal
+    parabolas = [edge.coefficients() for edge in first_channel.edges if "parabole" in edge.type]
+    lines = [edge.coefficients() for edge in first_channel.edges if "parabole" not in edge.type]
+    Display.display_parabolas_and_lines(image, parabolas, lines) ## TODO: Debug ici
 
 
 if __name__ == "__main__":
     main()
+ 
