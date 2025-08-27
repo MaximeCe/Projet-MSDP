@@ -59,8 +59,8 @@ class Channel:
     def compute_corners(self):
         """Calcule les sommets A, B, C, D, E, F du canal à partir des intersections."""
         # try:
-        print(
-            f"edges coefficients = {[edge.coefficients() for edge in self.edges]},edges types = {[edge.type for edge in self.edges]}")
+        # print(
+        #     f"edges coefficients = {[edge.coefficients() for edge in self.edges]},edges types = {[edge.type for edge in self.edges]}")
         parabolas = [edge.coefficients()
                         for edge in self.edges if "parabole" in edge.type]
         lines = [edge.coefficients()

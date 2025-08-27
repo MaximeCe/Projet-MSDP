@@ -4,7 +4,7 @@ from tools.channel_normaliser import extract_parabolic_shape_to_rect
 
 
 class SolarChannel(Channel):
-    def __init__(self, id, image, index, points, paraboles, output_shape=None, corners=None):
+    def __init__(self, id, image, index, points, paraboles, output_shape= None, corners=None):
         """
         :param id: identifiant unique du canal (1 à 9)
         :param image: instance de la classe Image
@@ -16,9 +16,13 @@ class SolarChannel(Channel):
         """
         super().__init__(id, image, index, points)
         # Extrait la région normalisée du canal solaire
+        
         self.data = extract_parabolic_shape_to_rect(
             image.data, paraboles, output_shape=output_shape, corners=corners
         )
         self.resolution = self.data.shape
         self.idx = index
         self.indice = index - 1
+
+
+
