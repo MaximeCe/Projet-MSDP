@@ -3,6 +3,8 @@ from channel import Channel
 from tools.detector import Detector
 from tools.io import Io
 import numpy as np
+from tools.channel_normaliser import channel_size
+import matplotlib.pyplot as plt
 
 class Image:
     def __init__(self, image_path, master_dark=None, nombre_canaux=9):
@@ -113,6 +115,27 @@ class Image:
         
         points_dict = self.create_points_dict()
         
+        canal = self.channels[self.nombre_canaux//2] # utilliser le canal centrale pour définir les coins
+        if hasattr(canal, "points_final") and canal.points_final:
+        # Ordre: [haut-gauche, haut-droit, bas-droit, bas-gauche]
+            pf = canal.points_final
+            if all(k in pf for k in ["C", "F", "D", "A"]):
+                corners = [
+                    (pf["C"].x, pf["C"].y),
+                    (pf["F"].x, pf["F"].y),
+                    (pf["D"].x, pf["D"].y),
+                    (pf["A"].x, pf["A"].y),
+                ]
+
+        # Afficher les coins sur l'image pour vérification
+        # self.afficher(points=[pf["C"], pf["F"], pf["D"], pf["A"]])
+        
+        
+        print(corners)
+        output_shape = channel_size(corners)
+        # output_shape = (800,100)
+        
+        
         for i, canal in enumerate(self.channels):
             
             # Récupérer les paraboles (gauche, droite, haut, bas) pour chaque canal
@@ -124,21 +147,18 @@ class Image:
             if len(paraboles) == 2 and len(droites) == 2:
                 # On suppose l'ordre des edges : [parabole_gauche, parabole_droite, droite_haut, droite_bas]
                 paraboles_ordre = paraboles + droites
-                # Récupérer les coins si calculés
-                corners = None
-                if hasattr(canal, "points_final") and canal.points_final:
-                    # Ordre: [haut-gauche, haut-droit, bas-droit, bas-gauche]
-                    pf = canal.points_final
-                    if all(k in pf for k in ["C", "F", "D", "A"]):
-                        corners = [
-                            (pf["C"].x, pf["C"].y),
-                            (pf["F"].x, pf["F"].y),
-                            (pf["D"].x, pf["D"].y),
-                            (pf["A"].x, pf["A"].y),
-                        ]
-                ## Affichage de canal.points pour vérification
+                # Affichage de canal.points pour vérification
                 # print(f"Canal {canal.id} points: { canal.points}")
-                        
+                
+                # # Affichage des paraboles et des droites sur l'image pour vérification
+                # x = np.linspace(0, self.shape[0], 500)
+                # for i in range(4):
+                #     y = paraboles_ordre[i][0]*x**2 + paraboles_ordre[i][1]*x + paraboles_ordre[i][2]
+                #     plt.plot(x, y)
+            
+                # plt.imshow(self.data, cmap='gray')
+                # plt.legend(['gauche', 'droite', 'haut', 'bas'])
+                # plt.show()
                 
                 solar_channel = SolarChannel(
                     id=canal.id,
@@ -146,8 +166,8 @@ class Image:
                     index=i,
                     points=points_dict,
                     paraboles=paraboles_ordre,
-                    output_shape=None,
-                    corners=corners
+                    output_shape=output_shape,
+                    
                 )
                 self.solar_channels.append(solar_channel)
             else:

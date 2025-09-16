@@ -16,7 +16,7 @@ def main():
         plt.imshow(solar_channel.data, cmap='gray')
         plt.title(f"Solar Channel {solar_channel.id}")
         plt.axis('off')
-    # plt.show()
+    plt.show()
     print(f"Ts (en pixels solaire) = {image.Ts}")
 
 

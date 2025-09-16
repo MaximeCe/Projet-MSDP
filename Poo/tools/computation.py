@@ -56,7 +56,7 @@ class Computation:
     @staticmethod
     def find_intersection(parabola, line, near_point):
         a_p, b_p, c_p = parabola
-        a_l, b_l, c_l = line
+        _, a_l, b_l = line
 
         A = a_p
         B = b_p - a_l

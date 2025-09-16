@@ -48,9 +48,9 @@ class Channel:
             droite_bas = Computation.line_coefficients(
                 self.points['k'].xy(), self.points['m'].xy())
             self.edges.append(
-                Edge("droite_haut", *droite_haut, c=None, canal=self))
+                Edge("droite_haut", a=0,b=droite_haut[0], c = droite_haut[1] , canal=self))
             self.edges.append(
-                Edge("droite_bas", *droite_bas, c=None, canal=self))
+                Edge("droite_bas", a=0, b=droite_bas[0], c=droite_bas[1], canal=self))
 
         except Exception as e:
             print(
