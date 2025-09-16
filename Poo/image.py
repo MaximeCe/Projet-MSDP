@@ -38,8 +38,11 @@ class Image:
             [np.sqrt((canal.points_final["D"].x-canal.points_final["A"].x)**2+(canal.points_final["D"].y-canal.points_final["A"].y)**2) for canal in self.channels])
         self.Tgij = np.mean(
             [self.channels[i+1].points_final["A"].x-self.channels[i].points_final["A"].x for i in range(len(self.channels)-1) if self.channels[i].points_final])
-        self.W = np.mean([canal.resolution[0] for canal in self.solar_channels if canal.resolution])
+        self.W = self.solar_channels[0].resolution[1]
         self.Ts = self.Tgij*self.W*self.t1_mm/(self.t2_mm*self.Wij)
+        
+        # Calibration photométrique des cannaux 
+        self.photometric_calibration()
 
 
     def load_and_process_image(self):
@@ -58,7 +61,6 @@ class Image:
 
         self.data = image
         self.resolution = f"{self.data.shape[1]}x{self.data.shape[0]}"
-
 
 
     def create_points_dict(self):
@@ -100,6 +102,7 @@ class Image:
             "ks": ks, "ls": ls, "ms": ms, "ns": ns
         }
         return points_dict
+  
     
     def create_channels(self):
         points_dict = self.create_points_dict()
@@ -172,6 +175,33 @@ class Image:
                 self.solar_channels.append(solar_channel)
             else:
                 print(f"⚠️ Canal {canal.id}: paraboles/droites manquantes, canal solaire non créé.")
+
+    def photometric_calibration(self):
+        xmax = self.solar_channels[0].resolution[1]
+        begining = int(0.03*xmax)
+        end = int(xmax-0.03*xmax)
+        Ts = round(self.Ts)
+        
+        for idx in range(len(self.solar_channels[:-1])):
+            # take all isolambda column on channel n and n+1 exept for the first 3%
+            isolambda_n = self.solar_channels[idx].data[begining:end-Ts, :]
+            isolambda_n1 = self.solar_channels[idx +1].data[begining+Ts:end, :]
+            
+            # compute the mean of each column
+            mean_n = np.mean(isolambda_n, axis=0)
+            mean_n1 = np.mean(isolambda_n1, axis=0)
+            print(f"Canal means, n={mean_n.mean()}, n+1={mean_n1.mean()}")
+            
+            # compute the ratio
+            ratio = mean_n / mean_n1
+
+            # apply the ratio to channel n+1
+            self.solar_channels[idx+1].data *= ratio
+    
+
+            
+            
+            
 
     def __str__(self):
         return f"Image(resolution={self.resolution}, canaux={len(self.channels)})"
