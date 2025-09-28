@@ -23,7 +23,7 @@ class SolarChannel(Channel):
         self.resolution = self.data.shape
         self.idx = index
         self.indice = index - 1
-        lambda_list = []
+        self.lambda_list = [None for _ in range(self.resolution[1])]
     
 
 

@@ -5,6 +5,7 @@ from tools.io import Io
 import numpy as np
 from tools.channel_normaliser import channel_size
 import matplotlib.pyplot as plt
+from tools.computation import Computation
 
 class Image:
     def __init__(self, image_path, master_dark=None, nombre_canaux=9):
@@ -34,15 +35,26 @@ class Image:
         # Paramètre de calibration en lambda
         self.t1_mm = 2.5
         self.t2_mm = 9.0
+        
+        # Largeur moyenne des cannaux (px)
         self.Wij = np.mean(
             [np.sqrt((canal.points_final["D"].x-canal.points_final["A"].x)**2+(canal.points_final["D"].y-canal.points_final["A"].y)**2) for canal in self.channels])
+        
+        # Distance entre deux cannaux successifs (px)
         self.Tgij = np.mean(
             [self.channels[i+1].points_final["A"].x-self.channels[i].points_final["A"].x for i in range(len(self.channels)-1) if self.channels[i].points_final])
+        
+        # Largeur des cannaux en pixels solaires 
         self.W = self.solar_channels[0].resolution[1]
+        
+        # Translation spectral entre deux cannaux successifs (px solaires)
         self.Ts = self.Tgij*self.W*self.t1_mm/(self.t2_mm*self.Wij)
         
         # Calibration photométrique des cannaux 
         self.photometric_calibration()
+        
+        # Calibration spectrométrique des cannaux
+        self.spectrometric_calibration()
 
 
     def load_and_process_image(self):
@@ -178,28 +190,117 @@ class Image:
 
     def photometric_calibration(self):
         xmax = self.solar_channels[0].resolution[1]
-        begining = int(0.03*xmax)
-        end = int(xmax-0.03*xmax)
+        begining = int(0.1*xmax)
+        end = int(xmax-0.1*xmax)
         Ts = round(self.Ts)
         
         for idx in range(len(self.solar_channels[:-1])):
-            # take all isolambda column on channel n and n+1 exept for the first 3%
-            isolambda_n = self.solar_channels[idx].data[begining:end-Ts, :]
-            isolambda_n1 = self.solar_channels[idx +1].data[begining+Ts:end, :]
+            map = self.solar_channels[idx].data
+            map1 = self.solar_channels[idx + 1].data
+            
+            # take all isolambda column on channel n and n+1 exept for the edges (5%)
+            isolambda_n = map[:,begining:end-Ts ] 
+            isolambda_n1 = map1[:,begining+Ts:end]
             
             # compute the mean of each column
             mean_n = np.mean(isolambda_n, axis=0)
             mean_n1 = np.mean(isolambda_n1, axis=0)
-            print(f"Canal means, n={mean_n.mean()}, n+1={mean_n1.mean()}")
+            # print(f"Canal means, n={mean_n.mean()}, n+1={mean_n1.mean()}")
             
             # compute the ratio
-            ratio = mean_n / mean_n1
+            ratio =  np.mean([mean_n[k]/mean_n1[k] for k in range(len(mean_n1))])
 
             # apply the ratio to channel n+1
-            self.solar_channels[idx+1].data *= ratio
+            self.solar_channels[idx + 1].data *= ratio 
     
+    def spectrometric_calibration(self):
+        
+        # initialisations
+        xmax = self.solar_channels[0].resolution[1]
+        begining = int(0.1*xmax)
+        end = int(xmax-0.1*xmax)
+        
+        # columns intensities for each channel
+        mean_columns_intensities = [[np.mean(canal.data[:,begining:end], axis = 0)] for canal in self.solar_channels]
+        
+        # replace mean columns intensities by an approximate parabolic fit and save the original in plot
+        plots = []
+        for i in range(len(mean_columns_intensities)):
+            plots.append(mean_columns_intensities[i])
+            mean_columns_intensities[i] = np.polyval(np.polyfit(np.arange(len(mean_columns_intensities[i][0])), mean_columns_intensities[i][0], 2), np.arange(len(mean_columns_intensities[i][0])))
+        # len(mean_columns_intensities[i]) = len(plots[i])
+        
+        # idx of the minimum intensity for each channel + begining offset
+        idx_min_intensities = [begining+np.argmin(intensities) for intensities in mean_columns_intensities]
+        
+        # find the argument of the list closest to half of xmax
+        ha_channel = np.argmin([abs(idx-xmax/2) for idx in idx_min_intensities])
+        ha_idx = idx_min_intensities[ha_channel]
+        print("Ha_channel", ha_channel)
+        self.solar_channels[ha_channel].lambda_list[ha_idx] = 6562.8  # H-alpha
+        print(f"Canal Ha (n°{ha_channel+1}) : min intensité à l'index {ha_idx} (milieu={xmax/2})")
+        """ Test de la méthode empirique de calcul de Ts et k (échec)
+        # Afficher les intensités de chaque canaux cote à cote pour vérification
+        for i, intensities in enumerate(mean_columns_intensities):
+            plt.plot(intensities, label=f"Canal {i+1} (min at {idx_min_intensities[i]})")
+            plt.scatter(
+                np.arange(len(plots[i][0])), plots[i])
 
+            plt.legend()
+            plt.show()
             
+        
+        # k computation
+        k_theorical = 0.3/self.Ts
+        Ts_theorical = self.Ts
+        
+        # get the min intensity index for the channel before and after ha_channel
+        ks = []
+        for i in range(1, 1+self.nombre_canaux//2): 
+            for idx in [ha_channel-i, ha_channel+i]:
+                # calcul du premier coefficient de la parabole correspondant à l'index
+                a = Computation.parabolic_interpolation(
+                    (0, mean_columns_intensities[idx][0]), 
+                    (len(mean_columns_intensities[idx])//2, mean_columns_intensities[idx][len(mean_columns_intensities[idx])//2]), 
+                    (len(mean_columns_intensities[idx]), mean_columns_intensities[idx][len(mean_columns_intensities[idx])-1]))[0]
+                
+                if begining>idx_min_intensities[idx]>end or a <0:
+                    print(f" Pas de minimum dans le canal {idx} sortie de la boucle")
+                    break
+                
+                delta_idx = idx_min_intensities[idx] - ha_idx
+                print("delta_idx", delta_idx)
+                Ts_mesured = abs(delta_idx)
+                print("Ts_mesured", Ts_mesured)
+                k_mesured = 0.3/Ts_mesured
+                ks.append(k_mesured)
+
+        for k in ks :
+            if abs(k- k_theorical)/k_theorical > 0.1:
+                print(f"⚠️ Attention : k mesuré={k:.6f} diffère de k théorique={k_theorical:.6f} de plus de 10%")
+        
+        k = np.mean(ks)
+        print(f"k final = {k:.4f} (théorique={k_theorical:.4f})")
+        """
+        # k computation
+        self.k = 0.3/self.Ts
+        
+        # propagation de k dans la liste de lambda pour chaque canal
+        for idx,canal in enumerate( self.solar_channels):
+            canal.lambda_list[ha_idx]= 6562.8+0.3*(idx-ha_channel)
+            for i in range(0, xmax):
+                canal.lambda_list[i] = 6562.8+0.3*(idx-ha_channel)+(ha_idx-i)*self.k
+
+        mean_complete_columns_intensities=[np.mean(canal.data, axis=0)
+         for canal in self.solar_channels]
+        # plot en x les lambdas et en y les intensités moyennes sur un même graphique
+        for idx, canal in enumerate(self.solar_channels):
+            plt.plot(canal.lambda_list[begining:end],
+                     plots[idx][0], label=f"Canal {idx+1}")
+            
+        plt.show()
+        
+        
             
             
 
