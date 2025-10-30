@@ -1,8 +1,34 @@
+from cv2 import threshold
 import numpy as np
-
+from numpy.typing import NDArray
+from typing import Any
 
 class Computation:
-    # ---- Dérivées & maxima ----
+    @staticmethod
+    def mask(image, threshold, display=False):
+        masqued = image.data.copy()
+        if threshold is None:
+            threshold = 0.1 * np.max(masqued)
+        
+        masqued[masqued <= threshold] = 0
+        # masqued[masqued != 0] = 1
+        image.masqued = masqued
+        # display du masque pour le debug
+        if display == True:
+            import matplotlib.pyplot as plt
+            plt.figure()
+            plt.title("Masque de l'image")
+            plt.imshow(image.masqued, cmap='gray')  # type: ignore
+            plt.axis('off')  # type: ignore
+            plt.show()
+        return image.masqued 
+    
+    @staticmethod
+    def filtre_de_sobel(derivative):
+        sobel_kernel = np.array([1, 0, -1])
+        return {x: np.convolve(derivative[x], sobel_kernel, mode='same') for x in derivative}
+    
+    
     @staticmethod
     def top_n_local_maxima(l, n):
         maxima = [(i, l[i]) for i in range(1, len(l)-1)
@@ -12,20 +38,124 @@ class Computation:
 
     @staticmethod
     def compute_first_derivative_x(image, y_positions):
-        image = image.data
+        image = image.masqued
         return {y: np.diff(image[y, :]) for y in y_positions}
 
     @staticmethod
     def compute_first_derivative_y(image, x_positions):
-        image = image.data
+        image = image.masqued
         return {x: np.diff(image[:, x]) for x in x_positions}
+    
+    @staticmethod
+    def compute_first_derivative(image, axis, positions, filter=True, display=False, mask = False):
+        if mask == True:    
+            image = image.masqued
+        else:
+            image = image.data
+
+        if axis == 'x' or axis == 0:
+            derivatives = {y: np.diff(image[y, :]) for y in positions}
+        elif axis == 'y' or axis == 1:
+            derivatives = {x: np.diff(image[:, x]) for x in positions}
+        else:
+            raise ValueError("Axis must be 'x' or 'y'")
+        
+        if filter == True:
+            derivatives = Computation.filtre_de_sobel(derivatives)
+        
+        
+        if display == True:
+            import matplotlib.pyplot as plt
+            for pos, deriv in derivatives.items():
+                _, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+                
+                # Plot derivative
+                ax1.plot(deriv)
+                ax1.set_title(f"First Derivative at position {pos}")
+                ax1.set_xlabel("Pixel Index")
+                ax1.set_ylabel("First Derivative Value")
+                ax1.grid()
+                
+                # Plot image with line position
+                ax2.imshow(image, cmap='gray')
+                if axis == 'x' or axis == 0:
+                    ax2.axhline(y=pos, color='r', linestyle='-')
+                else:
+                    ax2.axvline(x=pos, color='r', linestyle='-')
+                ax2.set_title("Image with derivative position")
+                
+                plt.tight_layout()
+                plt.show()
+        
+        
+        return derivatives
+    @staticmethod
+    def compute_second_derivative(image, axis, positions, filter = False, display = True, mask= False):
+        
+        if mask == True:
+            image = image.masqued
+        else: 
+            image = image.data
+        
+        if axis == 'x' or axis == 0:
+            second_derivatives = {y: np.diff(np.diff(image[y, :])) for y in positions}
+        elif axis == 'y' or axis == 1:
+            second_derivatives = {x: np.diff(np.diff(image[:, x])) for x in positions}
+        else:
+            raise ValueError("Axis must be 'x' or 'y'")
+        
+        if filter == True:
+            second_derivatives = Computation.filtre_de_sobel(
+                second_derivatives)
+            
+        if display == True:
+            import matplotlib.pyplot as plt
+            for pos, deriv in second_derivatives.items():
+                _, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+
+                # Plot derivative
+                ax1.plot(deriv)
+                ax1.set_title(f"Second Derivative at position {pos}")
+                ax1.set_xlabel("Pixel Index")
+                ax1.set_ylabel("Second Derivative Value")
+                ax1.grid()
+
+                # Plot image with line position
+                ax2.imshow(image, cmap='gray')
+                if axis == 'x' or axis == 0:
+                    ax2.axhline(y=pos, color='r', linestyle='-')
+                else:
+                    ax2.axvline(x=pos, color='r', linestyle='-')
+                ax2.set_title("Image with derivative position")
+
+                plt.tight_layout()
+                plt.show()
+        
+        
+        return second_derivatives     
 
 
     @staticmethod
-    def mean_derivative(flat):
-        flat = flat.data
+    def mean_derivative(flat, display=False, mask= False):
+        if mask == True:
+            flat = flat.masqued
+        else: 
+            flat = flat.data
+        
         derivatives = {x: np.diff(flat[:, x]) for x in range(flat.shape[1])}
-        return np.mean(list(derivatives.values()), axis=0)
+        mean_derivatives = np.mean(list(derivatives.values()), axis=0)
+        
+        if display == True:
+            import matplotlib.pyplot as plt
+            plt.figure()
+            plt.title("Mean First Derivative along X-axis")
+            plt.plot(mean_derivatives)
+            plt.xlabel("Pixel Index")
+            plt.ylabel("Mean First Derivative Value")
+            plt.grid()
+            plt.show()
+
+        return mean_derivatives
 
     # ---- Interpolations & géométrie ----
     @staticmethod
@@ -54,11 +184,11 @@ class Computation:
         return left_edge, right_edge, top_edge, bottom_edge
 
     @staticmethod
-    def find_intersection(parabola, line, near_point):
+    def find_intersection(parabola, line, near_point, display = False):
         a_p, b_p, c_p = parabola
         _, a_l, b_l = line
 
-        A = a_p
+        A = a_p + 1e-6
         B = b_p - a_l
         C = c_p - b_l
         delta = B**2 - 4*A*C
@@ -72,7 +202,32 @@ class Computation:
 
         d1 = np.hypot(x1-near_point[0], y1-near_point[1])
         d2 = np.hypot(x2-near_point[0], y2-near_point[1])
-        return (x1, y1) if d1 < d2 else (x2, y2)
+        
+        result = (x1, y1) if d1 < d2 else (x2, y2)
+        
+        if a_p*result[0]**2 + b_p*result[0] + c_p - (a_l*result[0] + b_l) > 1:
+            print(
+                f"Distance between intersection and point : {a_p*result[0]**2 + b_p*result[0] + c_p - (a_l*result[0] + b_l)}")
+            raise ValueError("Intersection point does not satisfy both equations")
+        
+        if display == True:
+            import matplotlib.pyplot as plt
+            plt.figure()
+            plt.title("Intersection Calculation")
+            x_vals = np.linspace(
+                min(result[0], near_point[0])-10, max(result[0], near_point[0])+10, 400)
+            y_parabola = a_p*x_vals**2 + b_p*x_vals + c_p
+            y_line = a_l*x_vals + b_l
+            plt.plot(x_vals, y_parabola, label='Parabola', linewidth=0.5)
+            plt.plot(x_vals, y_line, label='Line', linewidth=0.5)
+            plt.scatter([result[0]], [result[1]], color='red', label='Intersection', s = 2)
+            plt.scatter([near_point[0]], [near_point[1]], color='green', label='Near Point', s=2)
+            plt.legend()
+            plt.grid()
+            plt.show()
+        
+        
+        return result
 
     @staticmethod
     def find_quadrilateral_corners(parabolas, lines, near_points):

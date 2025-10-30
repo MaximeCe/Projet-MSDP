@@ -31,16 +31,7 @@ def solve_x_from_y(a, b, c, y):
     return [(-b - sqrt_disc) / (2*a), (-b + sqrt_disc) / (2*a)]
 
 
-def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple):
-    """
-    Extrait la région délimitée par 4 paraboles (toutes sous la forme y = a*x^2+b*x+c)
-    et la remappe dans un rectangle.
-
-    :param image: image source (numpy array)
-    :param paraboles: liste de 4 tuples (a, b, c), ordre: [gauche, droite, haut, bas]
-    :param output_shape: (h, w) taille du rectangle de sortie
-    :return: image rectifiée (numpy array)
-    """
+def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple, display = False):
     import numpy as np
     import cv2
 
@@ -63,10 +54,11 @@ def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple)
             xs_d = solve_x_from_y(a_d, b_d, c_d, y)
 
             if len(xs_g) == 0 or len(xs_d) == 0:
+                print(f"Warning: No solution for y={y} on paraboles.")
                 continue
 
-            x_g = min(xs_g)  # côté gauche
-            x_d = max(xs_d)  # côté droit
+            x_g = min(xs_g) if a_g < 0 else max(xs_g)  # côté gauche
+            x_d = min(xs_d) if a_d < 0 else max(xs_d)  # côté droit
             x = x_g + u * (x_d - x_g)
 
             # Haut et bas : direct (y = f(x))
@@ -74,60 +66,43 @@ def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple)
             y_b = a_b*x**2 + b_b*x + c_b
             y = y_h + v * (y_b - y_h)
 
-            # Interpolation bilinéaire
+            # Interpolation
             if 0 <= x < image.shape[1] and 0 <= y < image.shape[0]:
                 img_out[i, j] = cv2.getRectSubPix(
                     image, (1, 1), (float(x), float(y)))
             else:
                 img_out[i, j] = 0
+            
+        
+    
+    if display == True:
+        # Affiche les paraboles sur l'image d'origine et l'image rectifiée
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(12,6))
+        plt.subplot(1,2,1)
+        plt.title("Image d'origine avec paraboles")
+        plt.imshow(image, cmap='gray')
+        x = np.arange(image.shape[1])
+        y_g = a_g*x**2 + b_g*x + c_g
+        y_d = a_d*x**2 + b_d*x + c_d
+        y_h = a_h*x**2 + b_h*x + c_h
+        y_b = a_b*x**2 + b_b*x + c_b
+        plt.plot(x, y_g, 'r-', label = 'gauche', c='r', linewidth = 0.5)
+        plt.plot(x, y_d, 'r-', label='droite', c='b', linewidth=0.5)
+        plt.plot(x, y_h, 'r-', label='haut', c='g', linewidth=0.5)
+        plt.plot(x, y_b, 'r-', label='bas', c='y', linewidth=0.5)
+        plt.axis('off')
+        plt.subplot(1,2,2)
+        plt.title("Image rectifiée")
+        plt.imshow(img_out.squeeze(), cmap='gray')
+        plt.axis('off')
+        
+        plt.tight_layout()
+        plt.show()
 
     return img_out.squeeze()
 
 
 
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-
-    # Création d'une image de test (gradient)
-    img = np.zeros((200, 300), dtype=np.uint8)
-    cv2.rectangle(img, (100, 60), (130, 130), 10, -1)
-
-    # Paraboles fictives pour tester (bordure d'un rectangle)
-    # gauche/droite : x = cte, haut/bas : y = cte
-    paraboles = [
-        (0.001, 1/3, 25),   # gauche: x = 50
-        (0,0,60),  # droite: x = 250
-        (0, 0, 50),   # haut: y = 50
-        (0, 0, 150)   # bas: y = 150
-    ]
-
-    # Affichage des paraboles sur l'image d'origine
-    plt.figure(figsize=(10, 5))
-    plt.subplot(1, 2, 1)
-    plt.title("Image d'origine + paraboles")
-    plt.imshow(img, cmap='gray')
-
-    # Gauche et droite : x = a*y^2 + b*y + c
-    y_vals = np.linspace(0, img.shape[0]-1, 300)
-    for idx, (a, b, c) in enumerate(paraboles[:2]):
-        x_vals = a*y_vals**2 + b*y_vals + c
-        plt.plot(x_vals, y_vals, label=f'{"Gauche" if idx==0 else "Droite"}', color='red' if idx==0 else 'blue')
-
-    # Haut et bas : y = a*x^2 + b*x + c
-    x_vals = np.linspace(0, img.shape[1]-1, 300)
-    for idx, (a, b, c) in enumerate(paraboles[2:]):
-        y_vals_hb = a*x_vals**2 + b*x_vals + c
-        plt.plot(x_vals, y_vals_hb, label=f'{"Haut" if idx==0 else "Bas"}', color='green' if idx==0 else 'orange')
-
-    plt.legend()
-    plt.axis('image')
-
-    # Rectification
-    rectified = extract_parabolic_shape_to_rect(
-        img, paraboles, output_shape= (100,100))
-
-    plt.subplot(1, 2, 2)
-    plt.title("Rectifiée")
-    plt.imshow(rectified, cmap='gray')
-    plt.axis('off')
-    plt.show()
+    pass

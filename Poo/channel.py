@@ -1,6 +1,7 @@
 from point import Point
 from edge import Edge
 from tools.computation import Computation
+import numpy as np
 
 
 class Channel:
@@ -22,7 +23,7 @@ class Channel:
         self.build_edges()
         self.compute_corners()
 
-    def load_points(self, points):
+    def load_points(self, points, display = False):
         """Charge les points a-f, k-n depuis les structures as_, bs, etc."""
         noms = ['a', 'b', 'c', 'd', 'e', 'f', 'k', 'l', 'm', 'n']
         for nom in noms:
@@ -30,15 +31,31 @@ class Channel:
             if liste and len(liste) > self.index:
                 x, y = liste[self.index]
                 self.points[nom] = Point(nom, x, y, self)
+        
+        if display == True:
+            import matplotlib.pyplot as plt
+            fig, (ax2) = plt.subplots(1, 1, figsize=(12, 5))
+
+            # Image + points
+            ax2.set_title(f"Canal {self.id} - Points détectés")
+            ax2.imshow(self.image.data, cmap='gray')
+            for point in self.points.values():
+                ax2.scatter(point.x, point.y, color='red', s=10)
+                ax2.text(point.x, point.y, point.nom, color='yellow', fontsize=8)
+            ax2.axis('off')
+
+            plt.tight_layout()
+            plt.show()
+        
 
     def build_edges(self):
         """Construit les bords : 2 paraboles (gauche/droite) et 2 droites (haut/bas)"""
         try:
             # Paraboles : c,e,a (gauche) et f,d,b (droite)
             parabole_gauche = Computation.parabolic_interpolation(
-                self.points['c'].xy(), self.points['e'].xy(), self.points['a'].xy())
+                self.points['a'].xy(), self.points['b'].xy(), self.points['c'].xy())
             parabole_droite = Computation.parabolic_interpolation(
-                self.points['f'].xy(), self.points['d'].xy(), self.points['b'].xy())
+                self.points['d'].xy(), self.points['e'].xy(), self.points['f'].xy())
             self.edges.append(Edge("parabole_gauche", *parabole_gauche, canal=self))
             self.edges.append(Edge("parabole_droite", *parabole_droite, canal=self))
 
@@ -56,11 +73,9 @@ class Channel:
             print(
                 f"❌ Erreur lors de la construction des bords du canal {self.id} : {e}")
 
-    def compute_corners(self):
+    def compute_corners(self, display = False):
         """Calcule les sommets A, B, C, D, E, F du canal à partir des intersections."""
-        # try:
-        # print(
-        #     f"edges coefficients = {[edge.coefficients() for edge in self.edges]},edges types = {[edge.type for edge in self.edges]}")
+
         parabolas = [edge.coefficients()
                         for edge in self.edges if "parabole" in edge.type]
         lines = [edge.coefficients()
@@ -86,12 +101,41 @@ class Channel:
         self.points_final["B"] = Point("B", self.points['b'].x, self.points['b'].y, self)
         self.points_final["E"] = Point("E", self.points['e'].x, self.points['e'].y, self)
 
-        # except Exception as e:
-        #     print(
-        #         f"❌ Erreur lors du calcul des coins du canal {self.id} : {e}")
+        if display:
+            import matplotlib.pyplot as plt
+            fig, (ax2) = plt.subplots(1, 1, figsize=(12, 5))
 
-    def __str__(self):
-        txt = f"Canal {self.id} : {len(self.points)} pts détectés"
-        if self.points_final:
-            txt += f", coins A-F calculés : {', '.join(self.points_final.keys())}"
-        return txt
+            # Image + points
+
+            # Image + paraboles/droites
+            ax2.set_title(f"Canal {self.id} - Paraboles et droites")
+            ax2.imshow(self.image.data, cmap='gray')
+            x = np.arange(self.image.data.shape[1])
+            
+            for point in self.points_final.values():
+                ax2.scatter(point.x, point.y, color='blue', s=1)
+                ax2.text(point.x, point.y, point.nom, color='yellow', fontsize=8)
+
+            # Tracé des paraboles
+            for p in parabolas:
+                y = p[0]*x**2 + p[1]*x + p[2]
+                mask = (y >= 0) & (y < self.image.data.shape[0])
+                ax2.plot(x[mask], y[mask], 'r-', linewidth=0.5, label='Parabole')
+    
+            # Tracé des droites
+            for l in lines:
+                # l = (a=0, b, c) donc y = b*x + c
+                y = l[1]*x + l[2]
+                mask = (y >= 0) & (y < self.image.data.shape[0])
+                ax2.plot(x[mask], y[mask], 'y-', linewidth=0.5, label='Droite')
+            ax2.axis('off')
+
+            plt.tight_layout()
+            plt.show()
+
+
+        def __str__(self):
+            txt = f"Canal {self.id} : {len(self.points)} pts détectés"
+            if self.points_final:
+                txt += f", coins A-F calculés : {', '.join(self.points_final.keys())}"
+            return txt
