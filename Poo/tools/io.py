@@ -4,7 +4,7 @@ from astropy.io import fits
 
 class Io:
     @staticmethod
-    def load_fits(file_path: str):
+    def load_fits(file_path: str) -> np.ndarray:
         """Charge un fichier FITS si disponible, sinon retourne None."""
         try:
             with fits.open(file_path) as hdul:
@@ -12,7 +12,8 @@ class Io:
                 return hdul[0].data.astype(np.float32) # type: ignore
         except FileNotFoundError:
             print(f"⚠️ Fichier manquant : {file_path}")
-            return None
+            return np.array([])
+
 
     @staticmethod
     def preprocess_fits(image_path, master_dark=None, master_flat=None, master_bias=None):

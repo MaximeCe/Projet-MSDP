@@ -16,21 +16,37 @@ class Detector:
     def point_detection_x(derivatives, y_positions):
         lines = []
         for y in y_positions:
-            edges_x = Computation.top_n_local_maxima(
-                np.abs(derivatives[y]), 18)
+            edges_x = Computation.top_n_local_maxima(-derivatives[y], 18)
             lines.append(sorted([(xi, y)
                          for xi in edges_x], key=lambda p: p[0]))
         return lines
 
     @staticmethod
-    def detect_edges_x(flat):
+    def detect_edges_x(flat, display=False):
         mean_der = Computation.mean_derivative(flat)
-        first_peak, last_peak = Detector.top_and_bottom_detection(mean_der)
+        # Display mean derivative for debugging
+
+        
+        first_peak, last_peak = Detector.top_and_bottom_detection(np.abs(mean_der))
         if first_peak is None or last_peak is None:
             return []
         y_positions = [first_peak + 20, (first_peak + last_peak) // 2, last_peak - 20]
-        derivs = Computation.compute_first_derivative_x(flat, y_positions)
-        return Detector.point_detection_x(derivs, y_positions)
+        derivs = Computation.compute_first_derivative(flat, 0,y_positions)
+        lines = Detector.point_detection_x(derivs, y_positions)
+        
+        if display == True:
+            # Ad=ffichage des points (1px/point) de lines pour le debug
+            import matplotlib.pyplot as plt
+            plt.figure()
+            plt.title("Détection des points sur les dérivées en X")
+            plt.imshow(flat.data, cmap='gray')
+            plt.axis('off')
+            for line in lines:
+                xs, ys = zip(*line)
+                plt.scatter(xs, ys, color='red', s=1)
+            plt.show() 
+        
+        return lines
 
     @staticmethod
     def x_positions_computation(be_list):
@@ -45,13 +61,27 @@ class Detector:
     def point_detection_y(derivatives, x_positions):
         detected = []
         for x in x_positions:
-            ys = Computation.top_n_local_maxima(np.abs(derivatives[x]), 2)
+            ys = Computation.top_n_local_maxima(-derivatives[x], 2)
             detected.append(sorted([(x, yi)
                             for yi in ys], key=lambda p: (p[0], p[1])))
         return detected
 
     @staticmethod
-    def detect_edges_y(flat, be_list):
+    def detect_edges_y(flat, be_list, display = False):
         x_positions = Detector.x_positions_computation(be_list)
-        derivs = Computation.compute_first_derivative_y(flat, x_positions)
-        return Detector.point_detection_y(derivs, x_positions)
+        derivs = Computation.compute_first_derivative(flat,1, x_positions)
+        lines = Detector.point_detection_y(derivs, x_positions)
+        
+        if display == True:
+            # Ad=ffichage des points (1px/point) de lines pour le debug
+            import matplotlib.pyplot as plt
+            plt.figure()
+            plt.title("Détection des points sur les dérivées en X")
+            plt.imshow(flat.data, cmap='gray')
+            plt.axis('off')
+            for line in lines:
+                xs, ys = zip(*line)
+                plt.scatter(xs, ys, color='red', s=1)
+            plt.show() 
+            
+        return lines

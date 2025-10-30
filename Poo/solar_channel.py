@@ -1,10 +1,10 @@
 import numpy as np
 from channel import Channel
-from tools.channel_normaliser import extract_parabolic_shape_to_rect
+from tools.channel_normaliser import channel_size, extract_parabolic_shape_to_rect
 
 
 class SolarChannel(Channel):
-    def __init__(self, id, image, index, points, paraboles, output_shape= None, corners=None):
+    def __init__(self, id, image, index, points, paraboles, output_shape):
         """
         :param id: identifiant unique du canal (1 à 9)
         :param image: instance de la classe Image
@@ -14,15 +14,19 @@ class SolarChannel(Channel):
         :param output_shape: (h, w) taille du rectangle de sortie (optionnel si corners)
         :param corners: liste de 4 tuples (x, y) des coins (optionnel)
         """
-        super().__init__(id, image, index, points)
+        # super().__init__(id, image, index, points)
         # Extrait la région normalisée du canal solaire
         
         self.data = extract_parabolic_shape_to_rect(
-            image.data, paraboles, output_shape=output_shape, corners=corners
+            image.data, paraboles, output_shape=output_shape
         )
+        self.paraboles = paraboles
         self.resolution = self.data.shape
         self.idx = index
         self.indice = index - 1
+        self.lambda_list = [None for _ in range(self.resolution[1])]
+    
+
 
 
 
