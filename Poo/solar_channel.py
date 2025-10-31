@@ -1,6 +1,5 @@
-import numpy as np
 from channel import Channel
-from tools.channel_normaliser import channel_size, extract_parabolic_shape_to_rect
+from tools.channel_normaliser import extract_parabolic_shape_to_rect
 
 
 class SolarChannel(Channel):

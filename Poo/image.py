@@ -1,5 +1,4 @@
 from tools.io import Io
-from flat import Flat
 
 class Image:
     def __init__(self, image_path, dark_path, nombre_canaux=9) -> None:
