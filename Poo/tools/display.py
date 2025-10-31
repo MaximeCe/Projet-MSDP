@@ -4,6 +4,7 @@ from matplotlib.path import Path
 
 
 class Display:
+    """Not used, should replace the diplay = True arguments ???"""
     @staticmethod
     def crop(image, corners, quadrilateral_index):
         corners = np.array(corners)

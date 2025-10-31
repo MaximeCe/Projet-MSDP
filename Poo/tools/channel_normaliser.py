@@ -3,28 +3,59 @@ import cv2
 
 
 def channel_size(corners):
-    # OUTSHAPE EST PREFERABLE POUR AVOIR TOUS LES CANAUX SOLAIRE DE MEME TAILLE
-        # Ordre: [haut-gauche, haut-droit, bas-droit, bas-gauche]
-        (x0, y0), (x1, y1), (x2, y2), (x3, y3) = corners
-        # Largeur = moyenne des longueurs haut et bas
-        width_top = np.hypot(x1 - x0, y1 - y0)
-        width_bottom = np.hypot(x2 - x3, y2 - y3)
-        width = int(round((width_top + width_bottom) / 2))
-        # Hauteur = moyenne des longueurs gauche et droite
-        height_left = np.hypot(x3 - x0, y3 - y0)
-        height_right = np.hypot(x2 - x1, y2 - y1)
-        height = int(round((height_left + height_right) / 2))
-        h_out, w_out = height, width
-        output_shape = h_out, w_out 
-        print(f"Solar channels shape : {output_shape}")
-        return output_shape
+    """Compute the shape of a channel thanks to its corners
+
+    Parameters
+    ----------
+    corners : list[tuple[int]]
+        List of the corners, order : Top-Left; Top-Right; Bottom-Right; Bottom-Left
+
+    Returns
+    -------
+    Tuple
+        Hight and width of the channel
+    """
+    # Ordre: [haut-gauche, haut-droit, bas-droit, bas-gauche]
+    (x0, y0), (x1, y1), (x2, y2), (x3, y3) = corners
+    # Largeur = moyenne des longueurs haut et bas
+    width_top = np.hypot(x1 - x0, y1 - y0)
+    width_bottom = np.hypot(x2 - x3, y2 - y3)
+    width = int(round((width_top + width_bottom) / 2))
+    # Hauteur = moyenne des longueurs gauche et droite
+    height_left = np.hypot(x3 - x0, y3 - y0)
+    height_right = np.hypot(x2 - x1, y2 - y1)
+    height = int(round((height_left + height_right) / 2))
+    h_out, w_out = height, width
+    output_shape = h_out, w_out 
+    print(f"Solar channels shape : {output_shape}")
+    return output_shape
 
 
+"""Résout y = a*x^2+b*x+c → retourne les deux solutions possibles en x"""
 def solve_x_from_y(a, b, c, y):
-    """Résout y = a*x^2+b*x+c → retourne les deux solutions possibles en x"""
+    """Solve y = ax^2+bx+c
+
+    Parameters
+    ----------
+    a : float
+        a coefficient of a parabola
+    b : float
+        b coefficient of a parabola
+    c : float
+        c coefficient of a parabola
+    y : float
+        solve for y
+
+    Returns
+    -------
+    list[float]
+        The 2 solution of this equation
+    """
+    
     if abs(a) < 1e-12:  # Cas linéaire
         return [(y - c) / b] if abs(b) > 1e-12 else []
     disc = b**2 - 4*a*(c - y)
+    
     if disc < 0:
         return []
     sqrt_disc = np.sqrt(disc)
@@ -32,13 +63,30 @@ def solve_x_from_y(a, b, c, y):
 
 
 def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple, display = False):
+    """Transform a parabolic shape into a rectangle
+
+    Parameters
+    ----------
+    image : Image
+        The image containing the parabolic shape (Channel)
+    paraboles : list
+        The 4 parabolas describing the edges of the parabolic shape
+    output_shape : tuple
+        Shape of the output image
+    display : bool, optional
+        If True, display the parabolas on the input image and the corresponding output image, by default False
+
+    Returns
+    -------
+    ndarray
+        The rectangle extracted from the image
+    """
     import numpy as np
     import cv2
 
     h_out, w_out = output_shape
     img_out = np.zeros((h_out, w_out, *image.shape[2:]), dtype=image.dtype)
     (a_g, b_g, c_g), (a_d, b_d, c_d), (a_h, b_h, c_h), (a_b, b_b, c_b) = paraboles
-
 
 
     for i in range(h_out):

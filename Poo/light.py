@@ -3,6 +3,7 @@ from flat import Flat
 
 class Lights():
     def __init__(self, lights_path: list[str], flat_path, dark_path, nombre_canaux=9) -> None:
+        """class de traitement. Prend une liste de chemin d'image et applique les transformations grace à in flat"""
         self.lights_path = lights_path
         self.flat_path = flat_path
         self.dark_path = dark_path

@@ -82,6 +82,7 @@ class Flat():
 
 
     def create_points_dict(self):
+        """Generate a dictionnary with key = 'name' and value = list[point] each point being on one edge of a channel following the figure 3 in the pdf file"""
         # Détection horizontale (3 lignes → 18 points pour chaque)
         detected = Detector.detect_edges_x(self)
         if not all(detected):
@@ -196,6 +197,9 @@ class Flat():
 
 
     def photometric_calibration(self):
+        """Photometric calibration of each channels. lambda = wavelength; isolambda = same wavelength column in a channel in solar coordinate.
+        Computation => Isolambda in channel n / isolambda in channel n + 1  = calibration Ratio 
+        channel *= calibration Ratio"""
         xmax = self.solar_channels[0].resolution[1]
         begining = int(0.1*xmax)
         end = int(xmax-0.1*xmax)
@@ -225,7 +229,8 @@ class Flat():
 
 
     def spectrometric_calibration(self, display = True):
-        
+        """Compute the calibration in wavelength. Detect the most centered minimum as the raie of interest (Ha) and 
+        propagate the wavelength thanks to Ts inside the channel and ad 0.3A to an isolambda column to change channel"""
         # initialisations
         xmax = self.solar_channels[0].resolution[1]
         begining = int(0*xmax)

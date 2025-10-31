@@ -3,6 +3,7 @@ from flat import Flat
 
 class Image:
     def __init__(self, image_path, dark_path, nombre_canaux=9) -> None:
+        """Not used. Should be a static class for flat, light and maybe dark ???"""
         self.image_path= image_path
         self.dark_path = dark_path
         self.nombre_canaux = nombre_canaux

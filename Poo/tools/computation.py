@@ -6,6 +6,22 @@ from typing import Any
 class Computation:
     @staticmethod
     def mask(image, threshold, display=False):
+        """Compute the masqued version of an image
+
+        Parameters
+        ----------
+        image : NDArray
+            The image that you want to mask
+        threshold : float
+            Threshold under which every pixel is set to 0
+        display : bool, optional
+            If True, display the masked image, by default False
+
+        Returns
+        -------
+        NDArray
+            The masqued image
+        """
         masqued = image.data.copy()
         if threshold is None:
             threshold = 0.1 * np.max(masqued)
@@ -36,16 +52,7 @@ class Computation:
         maxima.sort(key=lambda x: x[1], reverse=True)
         return [idx for idx, _ in maxima[:n]]
 
-    @staticmethod
-    def compute_first_derivative_x(image, y_positions):
-        image = image.masqued
-        return {y: np.diff(image[y, :]) for y in y_positions}
 
-    @staticmethod
-    def compute_first_derivative_y(image, x_positions):
-        image = image.masqued
-        return {x: np.diff(image[:, x]) for x in x_positions}
-    
     @staticmethod
     def compute_first_derivative(image, axis, positions, filter=True, display=False, mask = False):
         if mask == True:    
@@ -87,8 +94,9 @@ class Computation:
                 plt.tight_layout()
                 plt.show()
         
-        
         return derivatives
+
+
     @staticmethod
     def compute_second_derivative(image, axis, positions, filter = False, display = True, mask= False):
         
@@ -131,7 +139,6 @@ class Computation:
                 plt.tight_layout()
                 plt.show()
         
-        
         return second_derivatives     
 
 
@@ -168,6 +175,7 @@ class Computation:
 
     @staticmethod
     def line_coefficients(p1, p2):
+        """Linear Interpolation"""
         if p1[0] == p2[0]:
             return 0, p1[1]
         a = (p2[1] - p1[1]) / (p2[0] - p1[0])
@@ -177,6 +185,7 @@ class Computation:
     # ---- Equations de parallélogramme ----
     @staticmethod
     def get_parallelogram_equations(parabolas, lines):
+        """Useless function to clarify the code, parabolas and lines should be a class ??? """
         left_edge = parabolas[0]
         right_edge = parabolas[1]
         top_edge = lines[0]
@@ -185,6 +194,29 @@ class Computation:
 
     @staticmethod
     def find_intersection(parabola, line, near_point, display = False):
+        """Compute the intersection between a line and a parabola, discrimine the 2 solutions thanks to a near point
+
+        Parameters
+        ----------
+        parabola : tuple
+            a,b,c coefficients of the parabola
+        line : tuple
+            0,a,b coefficients of the line
+        near_point : tuple
+            x,y coordinate of the nearest point to the desired intersection
+        display : bool, optional
+            If True, display the parabola, the line and the intersection point found, by default False
+
+        Returns
+        -------
+        Tuple
+            The intersection point between the line and the parabola under the (x,y) format
+
+        Raises
+        ------
+        ValueError
+            Triger if the output point doesn't solve the equation of the line and the equation of the parabola
+        """
         a_p, b_p, c_p = parabola
         _, a_l, b_l = line
 

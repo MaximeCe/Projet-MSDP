@@ -6,6 +6,8 @@ from tools.channel_normaliser import channel_size, extract_parabolic_shape_to_re
 class SolarChannel(Channel):
     def __init__(self, id, image, index, points, paraboles, output_shape):
         """
+        Channel in solar coordinates
+
         :param id: identifiant unique du canal (1 à 9)
         :param image: instance de la classe Image
         :param index: position du canal dans la liste
