@@ -14,9 +14,11 @@ class Lights():
         self.data = None
         self.shape = self.data.shape if self.data is not None else (0, 0)
         self.lights = [Io.load_fits(light_path) for light_path in self.lights_path]
+        print(f"Nombre d'images chargées: {len(self.lights)}")
+        print(f"Taille des images: {self.lights[0].shape}")
         dark = Io.load_fits(self.dark_path)
         
-        self.datas = self.lights - dark
+        self.datas = [light - dark for light in self.lights]
         self.flat = Flat(flat_path=self.flat_path, dark_path=self.dark_path, nombre_canaux=self.nombre_canaux)
         
         self.light_solar_channels = []

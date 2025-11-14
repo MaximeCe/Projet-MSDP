@@ -1,10 +1,37 @@
 from matplotlib import pyplot as plt
 from flat import Flat
 from light import Lights
+import numpy as np
+import os
 
 def main():
     
-    lights = Lights(["image.fit"], flat_path="flat.fits", dark_path="dark.fits", nombre_canaux=9)
+    def stack_images(images):
+        """Stack images together"""
+        return np.median(np.array(images), axis=0)
+    
+    def stack_folder(folder_name):
+        """stack all the fit images in a folder and save the master fit in the master file"""
+        import os
+        from tools.io import Io
+        if not os.path.exists('master'):
+            os.makedirs('master')
+        image_files = [f for f in os.listdir(folder_name) if f.endswith('.fit') or f.endswith('.fits')]
+        images = [Io.load_fits(os.path.join(folder_name, f)) for f in image_files]
+        stacked_image = stack_images(images)
+        Io.save_fits(stacked_image, f'master/{folder_name}.fits')
+        print(f"Master stacked image saved to 'master/{folder_name}.fits'")
+    
+    # stack_folder("Flats")
+    # stack_folder("Darks")
+    
+    images_path = [f for f in os.listdir(
+        "Lights") if f.endswith('.fit') or f.endswith('.fits')]
+    images_path = [os.path.join("Lights", f) for f in images_path]
+    
+    
+    
+    lights = Lights(images_path, flat_path="master/Flats.fits", dark_path="master/Darks.fits", nombre_canaux=9)
     
     # # Chargement de l'image FITS avec soustraction du dark
     # image = Flat(

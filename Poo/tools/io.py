@@ -13,6 +13,13 @@ class Io:
         except FileNotFoundError:
             print(f"⚠️ Fichier manquant : {file_path}")
             return np.array([])
+    
+    @staticmethod
+    def save_fits(data: np.ndarray, file_path: str) -> None:
+        """Sauvegarde une image au format FITS."""
+        hdu = fits.PrimaryHDU(data)
+        hdu.writeto(file_path, overwrite=True)
+        print(f"✔️ Fichier sauvegardé : {file_path}")
 
 
     @staticmethod

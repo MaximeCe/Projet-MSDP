@@ -2,7 +2,7 @@ import numpy as np
 from tools.computation import Computation
 
 TOP_AND_BOTTOM_DETECTION_THRESHOLD_FACTOR = 0.1
-Y_POSITIONS_OFFSET = 20 # Offset for top/bottom lines in x edge detection
+Y_POSITIONS_OFFSET = 60 # Offset for top/bottom lines in x edge detection
 
 class Detector:
     @staticmethod
@@ -26,7 +26,7 @@ class Detector:
         return lines
 
     @staticmethod
-    def detect_edges_x(flat, display=False):
+    def detect_edges_x(flat, display=True):
         """Detect three point on the left edge and on the right edge for each channel in the flat image
 
         Parameters
@@ -87,7 +87,7 @@ class Detector:
         return detected
 
     @staticmethod
-    def detect_edges_y(flat, be_list, display = False):
+    def detect_edges_y(flat, be_list, display = True):
         """Detect a point on the bottom edge and top edge for each x_positions (2 x_position per channel eavenly distributed between a b and a e point)
 
         Parameters
