@@ -7,6 +7,10 @@ from channel import Channel
 import numpy as np
 import matplotlib.pyplot as plt
 
+THRESHOLD_FACTOR = 0.1
+CHANNEL_OFFSET = 0.05 # 5% offset to avoid edge effects in calibration
+TARGETED_LAMBDA = 6562.8 # H-alpha line in Angstroms
+LAMBDA_OFFSET = 0.3 # Wavelength difference between two consecutive channels in Angs
 
 class Flat():
     def __init__(self, flat_path, dark_path, nombre_canaux=9):
@@ -21,7 +25,7 @@ class Flat():
         # Seuil fixé pour que 98% des pixels du FITS soient inférieurs
         # self.load_and_process_image()
         self.data = Io.load_fits(self.flat_path)- dark_data
-        self.threshold = 0.1* np.max(self.data)
+        self.threshold = THRESHOLD_FACTOR * np.max(self.data)
         self.masqued=Computation.mask(self, self.threshold)
         self.shape = self.data.shape if self.data is not None else (0, 0)
 
@@ -131,7 +135,7 @@ class Flat():
             self.channels.append(canal)
 
 
-    def create_solar_channels(self):
+    def create_solar_channels(self, display = False):
         """Crée les canaux solaires normalisés à partir des canaux détectés."""
         print("🔄 Création des canaux solaires normalisés...")
         
@@ -150,10 +154,10 @@ class Flat():
                 ]
 
         # Afficher les coins sur l'image pour vérification
-        # self.afficher(points=[pf["C"], pf["F"], pf["D"], pf["A"]])
-        
-        
-        print(corners)
+        if display == True:
+            self.afficher(points=[pf["C"], pf["F"], pf["D"], pf["A"]])
+            print(corners)
+
         self.output_shape = channel_size(corners)
         # output_shape = (800,100)
         
@@ -169,18 +173,20 @@ class Flat():
             if len(paraboles) == 2 and len(droites) == 2:
                 # On suppose l'ordre des edges : [parabole_gauche, parabole_droite, droite_haut, droite_bas]
                 paraboles_ordre = paraboles + droites
+
                 # Affichage de canal.points pour vérification
-                # print(f"Canal {canal.id} points: { canal.points}")
+                if display == True:
+                    print(f"Canal {canal.id} points: { canal.points}")
+                    
+                    # Affichage des paraboles et des droites sur l'image pour vérification
+                    x = np.linspace(0, self.shape[0], 500)
+                    for i in range(4):
+                        y = paraboles_ordre[i][0]*x**2 + paraboles_ordre[i][1]*x + paraboles_ordre[i][2]
+                        plt.plot(x, y)
                 
-                # # Affichage des paraboles et des droites sur l'image pour vérification
-                # x = np.linspace(0, self.shape[0], 500)
-                # for i in range(4):
-                #     y = paraboles_ordre[i][0]*x**2 + paraboles_ordre[i][1]*x + paraboles_ordre[i][2]
-                #     plt.plot(x, y)
-            
-                # plt.imshow(self.data, cmap='gray')
-                # plt.legend(['gauche', 'droite', 'haut', 'bas'])
-                # plt.show()
+                    plt.imshow(self.data, cmap='gray')# type: ignore 
+                    plt.legend(['gauche', 'droite', 'haut', 'bas'])
+                    plt.show()
                 
                 solar_channel = SolarChannel(
                     id=canal.id,
@@ -201,8 +207,8 @@ class Flat():
         Computation => Isolambda in channel n / isolambda in channel n + 1  = calibration Ratio 
         channel *= calibration Ratio"""
         xmax = self.solar_channels[0].resolution[1]
-        begining = int(0.1*xmax)
-        end = int(xmax-0.1*xmax)
+        begining = int(CHANNEL_OFFSET*xmax)
+        end = int(xmax-CHANNEL_OFFSET*xmax)
         Ts = round(self.Ts)
         
         self.photometric_ratios = {}
@@ -233,8 +239,8 @@ class Flat():
         propagate the wavelength thanks to Ts inside the channel and ad 0.3A to an isolambda column to change channel"""
         # initialisations
         xmax = self.solar_channels[0].resolution[1]
-        begining = int(0*xmax)
-        end = int(xmax-0*xmax)
+        begining = int(CHANNEL_OFFSET*xmax)
+        end = int(xmax-CHANNEL_OFFSET*xmax)
         
         # columns intensities for each channel
         mean_columns_intensities = [[np.mean(canal.data[:,begining:end], axis = 0)] for canal in self.solar_channels]
@@ -255,7 +261,7 @@ class Flat():
                                         * min_intensities[idx] for idx in range(len(idx_min_intensities))])
         ha_idx = idx_min_intensities[ha_channel]
         print("Ha_channel", ha_channel)
-        self.solar_channels[ha_channel].lambda_list[ha_idx] = 6562.8  # H-alpha
+        self.solar_channels[ha_channel].lambda_list[ha_idx] = TARGETED_LAMBDA  # H-alpha
         print(f"Canal Ha (n°{ha_channel+1}) : min intensité à l'index {ha_idx} (milieu={xmax/2})")
         """ Test de la méthode empirique de calcul de Ts et k (échec)
         # Afficher les intensités de chaque canaux cote à cote pour vérification
@@ -305,9 +311,10 @@ class Flat():
         
         # propagation de k dans la liste de lambda pour chaque canal
         for idx,canal in enumerate( self.solar_channels):
-            canal.lambda_list[ha_idx]= 6562.8+0.3*(idx-ha_channel)
+            canal.lambda_list[ha_idx]= TARGETED_LAMBDA+LAMBDA_OFFSET*(idx-ha_channel)
             for i in range(0, xmax):
-                canal.lambda_list[i] = 6562.8+0.3*(idx-ha_channel)+(ha_idx-i)*self.k
+                canal.lambda_list[i] = TARGETED_LAMBDA + \
+                    LAMBDA_OFFSET*(idx-ha_channel)+(ha_idx-i)*self.k
 
         # mean_complete_columns_intensities=[np.mean(canal.data, axis=0)
         #  for canal in self.solar_channels]

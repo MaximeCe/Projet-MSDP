@@ -35,3 +35,18 @@ class Io:
             image /= flat
 
         return image
+    
+    @staticmethod
+    def load_global_params(params_path: str) -> None:
+        """ Set up les varaiables globales à partir d'un JSON de paramètres."""
+        import json
+        
+        try:
+            with open(params_path, 'r') as f:
+                params = json.load(f)
+                print(f"Paramètres chargés depuis {params_path}")
+                return params
+        except FileNotFoundError:
+            print(f"Fichier de paramètres non trouvé : {params_path}")
+        except json.JSONDecodeError:
+            print(f"Erreur de décodage JSON dans le fichier : {params_path}")

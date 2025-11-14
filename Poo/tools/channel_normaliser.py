@@ -1,5 +1,6 @@
 import numpy as np
 
+EPSILON = 1e-12
 
 def channel_size(corners):
     """Compute the shape of a channel thanks to its corners
@@ -51,8 +52,8 @@ def solve_x_from_y(a, b, c, y):
         The 2 solution of this equation
     """
     
-    if abs(a) < 1e-12:  # Cas linéaire
-        return [(y - c) / b] if abs(b) > 1e-12 else []
+    if abs(a) < EPSILON:  # Cas linéaire
+        return [(y - c) / b] if abs(b) > EPSILON else []
     disc = b**2 - 4*a*(c - y)
     
     if disc < 0:

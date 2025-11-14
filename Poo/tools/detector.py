@@ -1,12 +1,14 @@
 import numpy as np
 from tools.computation import Computation
 
+TOP_AND_BOTTOM_DETECTION_THRESHOLD_FACTOR = 0.1
+Y_POSITIONS_OFFSET = 20 # Offset for top/bottom lines in x edge detection
 
 class Detector:
     @staticmethod
     def top_and_bottom_detection(mean_derivatives) -> tuple[int | None, int | None]:
         """Detect the top and bottom lines of the channel"""
-        threshold = 0.1 * np.max(np.abs(mean_derivatives))
+        threshold = TOP_AND_BOTTOM_DETECTION_THRESHOLD_FACTOR * np.max(np.abs(mean_derivatives))
         first_peak = next((i for i, v in enumerate(
             mean_derivatives) if abs(v) > threshold), None)
         last_peak = next((i for i, v in reversed(
@@ -46,7 +48,7 @@ class Detector:
         first_peak, last_peak = Detector.top_and_bottom_detection(np.abs(mean_der))
         if first_peak is None or last_peak is None:
             return []
-        y_positions = [first_peak + 20, (first_peak + last_peak) // 2, last_peak - 20]
+        y_positions = [first_peak + Y_POSITIONS_OFFSET, (first_peak + last_peak) // 2, last_peak - Y_POSITIONS_OFFSET]
         derivs = Computation.compute_first_derivative(flat, 0,y_positions)
         lines = Detector.point_detection_x(derivs, y_positions)
         
