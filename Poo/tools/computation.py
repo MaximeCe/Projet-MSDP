@@ -2,7 +2,7 @@ import numpy as np
 
 class Computation:
     @staticmethod
-    def mask(image, threshold, display=False):
+    def mask(image, threshold, display=True):
         """Compute the masqued version of an image
 
         Parameters
@@ -19,6 +19,7 @@ class Computation:
         NDArray
             The masqued image
         """
+        print("Computing image mask...")
         masqued = image.data.copy()
         if threshold is None:
             threshold = 0.1 * np.max(masqued)
@@ -34,11 +35,14 @@ class Computation:
             plt.imshow(image.masqued, cmap='gray')  # type: ignore
             plt.axis('off')  # type: ignore
             plt.show()
+        print("Mask computation complete.")
         return image.masqued 
     
     @staticmethod
     def filtre_de_sobel(derivative):
-        sobel_kernel = np.array([1, 0, -1])
+        """Applies a Sobel filter to the given derivative data."""
+        print("Applying Sobel filter to derivative...")
+        sobel_kernel = np.array([1,1, 0, -1,-1])
         return {x: np.convolve(derivative[x], sobel_kernel, mode='same') for x in derivative}
     
     
@@ -51,14 +55,16 @@ class Computation:
 
 
     @staticmethod
-    def compute_first_derivative(image, axis, positions, filter=True, display=False, mask = False):
+    def compute_first_derivative(image, axis, positions, filter=True, display=True, mask=False):
+        print("Computing first derivative...")
         if mask == True:    
             image = image.masqued
         else:
             image = image.data
 
+        # Compute derivative along 5 positions centered around the given posotions
         if axis == 'x' or axis == 0:
-            derivatives = {y: np.diff(image[y, :]) for y in positions}
+            derivatives = {y: np.mean(np.array([np.convolve(image[y+dy, :], [1, 1, 0, -1, -1], mode='same') for dy in range(-2, 3)]), axis=0) for y in positions}
         elif axis == 'y' or axis == 1:
             derivatives = {x: np.diff(image[:, x]) for x in positions}
         else:
@@ -96,7 +102,7 @@ class Computation:
 
     @staticmethod
     def compute_second_derivative(image, axis, positions, filter = False, display = True, mask= False):
-        
+        print("Computing second derivative...")
         if mask == True:
             image = image.masqued
         else: 
@@ -140,7 +146,8 @@ class Computation:
 
 
     @staticmethod
-    def mean_derivative(flat, display=False, mask= False):
+    def mean_derivative(flat, display=True, mask=False):
+        print("Computing mean derivative...")
         if mask == True:
             flat = flat.masqued
         else: 
@@ -164,19 +171,25 @@ class Computation:
     # ---- Interpolations & géométrie ----
     @staticmethod
     def parabolic_interpolation(p1, p2, p3):
+        """Parabolic Interpolation"""
+        print(f"Computing parabolic interpolation on points : {p1}, {p2}, {p3}")
         A = np.array([[p1[0]**2, p1[0], 1],
                       [p2[0]**2, p2[0], 1],
                       [p3[0]**2, p3[0], 1]])
         B = np.array([p1[1], p2[1], p3[1]])
-        return tuple(np.linalg.solve(A, B))
+        solution = tuple(np.linalg.solve(A, B))
+        print(f"Parabolic interpolation complete, coefficients found: {solution}")
+        return solution
 
     @staticmethod
     def line_coefficients(p1, p2):
         """Linear Interpolation"""
+        print(f"Computing line coefficients using points : {p1}, {p2}")
         if p1[0] == p2[0]:
             return 0, p1[1]
         a = (p2[1] - p1[1]) / (p2[0] - p1[0])
         b = p1[1] - a * p1[0]
+        print(f"Line coefficients computed: a={a}, b={b}")
         return a, b
 
     # ---- Equations de parallélogramme ----
@@ -190,7 +203,7 @@ class Computation:
         return left_edge, right_edge, top_edge, bottom_edge
 
     @staticmethod
-    def find_intersection(parabola, line, near_point, display = False):
+    def find_intersection(parabola, line, near_point, display=True):
         """Compute the intersection between a line and a parabola, discrimine the 2 solutions thanks to a near point
 
         Parameters

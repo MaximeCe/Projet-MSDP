@@ -134,8 +134,7 @@ class Flat():
             canal = Channel(id=i + 1, image=self, index=i, points=points_dict)
             self.channels.append(canal)
 
-
-    def create_solar_channels(self, display = False):
+    def create_solar_channels(self, display= True):
         """Crée les canaux solaires normalisés à partir des canaux détectés."""
         print("🔄 Création des canaux solaires normalisés...")
         

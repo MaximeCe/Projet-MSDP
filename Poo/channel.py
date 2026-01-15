@@ -23,7 +23,7 @@ class Channel:
         self.build_edges()
         self.compute_corners()
 
-    def load_points(self, points, display = False):
+    def load_points(self, points, display = True):
         """Charge les points a-f, k-n depuis les structures as_, bs, etc."""
         noms = ['a', 'b', 'c', 'd', 'e', 'f', 'k', 'l', 'm', 'n']
         for nom in noms:
@@ -73,7 +73,7 @@ class Channel:
             print(
                 f"❌ Erreur lors de la construction des bords du canal {self.id} : {e}")
 
-    def compute_corners(self, display = False):
+    def compute_corners(self, display=True):
         """Calcule les sommets A, B, C, D, E, F du canal à partir des intersections."""
 
         parabolas = [edge.coefficients()

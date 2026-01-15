@@ -15,6 +15,7 @@ def channel_size(corners):
     Tuple
         Hight and width of the channel
     """
+    print("Computing solar channels size from corners...")
     # Ordre: [haut-gauche, haut-droit, bas-droit, bas-gauche]
     (x0, y0), (x1, y1), (x2, y2), (x3, y3) = corners
     # Largeur = moyenne des longueurs haut et bas
@@ -51,7 +52,7 @@ def solve_x_from_y(a, b, c, y):
     list[float]
         The 2 solution of this equation
     """
-    
+    print("Solving prabola equation...")
     if abs(a) < EPSILON:  # Cas linéaire
         return [(y - c) / b] if abs(b) > EPSILON else []
     disc = b**2 - 4*a*(c - y)
@@ -59,10 +60,11 @@ def solve_x_from_y(a, b, c, y):
     if disc < 0:
         return []
     sqrt_disc = np.sqrt(disc)
+    print("Solutions found.")
     return [(-b - sqrt_disc) / (2*a), (-b + sqrt_disc) / (2*a)]
 
 
-def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple, display = False):
+def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple, display = True):
     """Transform a parabolic shape into a rectangle
 
     Parameters
@@ -81,6 +83,7 @@ def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple,
     ndarray
         The rectangle extracted from the image
     """
+    print("Extracting parabolic shape to rectangle...")
     import numpy as np
     import cv2
 
@@ -120,6 +123,7 @@ def extract_parabolic_shape_to_rect(image, paraboles: list, output_shape: tuple,
                     image, (1, 1), (float(x), float(y)))
             else:
                 img_out[i, j] = 0
+    print("Extraction complete.")
             
         
     
