@@ -1,0 +1,122 @@
+# ms.yml
+# MSDP Data Processing Parameters
+# Translated from ms.par - Parameters for solar disk observations
+
+# SUCCESSIVE STEPS
+# Control flags: 1 = execute step, 0 = skip step
+ixy: 1        # Computation of average files (dark, flat, field-stop)
+igeom: 1      # Geometry computation
+iflat: 0      # Calibration
+ibmc: 0       # Elementary calibrated c-files (1 file per time)
+icmd: 0       # d-files (spectroheliograms and I/V maps)
+ides: 0       # Plots (1 = plot, 0 = no plot)
+iquick: 0     # q-files for full scanned targets
+igrayq: 0     # Plots of q-files
+
+# AUTOMATIC PLOTS AFTER CALCULATION
+# 0 = plots available only afterwards with "gv"
+igeo: 1       # Plot of geo.ps
+iflat1: 0     # flat1.ps
+iflat2: 0     # flat2.ps
+ical: 0       # cal.ps
+
+# SELECTED OBSERVATIONS
+nfx1: 1       # First used dark current file
+nfx2: 1       # Last used dark current file
+nfy1: 1       # First used flat field file
+nfy2: 2       # Last used flat field file
+nfb1: 0       # First used observation file
+nfb2: 0       # Last used observation file
+
+nob1: 1       # First image to be processed
+nob2: 5       # Last image to be processed
+ntmax: 5      # Number of images per scan
+priscan: 4    # Scanning pattern (4 for Meudon: 5 images, scanning by prisms (2,3,1,5,4))
+nobstep: 5    # Step between first images of two scans
+
+# OBSERVATION DATES AND TIMES
+dob: "20170330"           # Date of observation (optional)
+tob1: "10200351"          # First time for observations to be processed
+tob2: "24000000"          # Last time
+tdc1: "0"                 # Same for dark current
+tdc2: "24000000"
+tfs1: "0"                 # Same for field stop
+tfs2: "0"
+calfs: -1                 # -1 if flat field Y replaces field stop Z, 0 otherwise
+tff1: "0959000"           # Same for flat field
+tff2: "2400000"
+nff: 1                    # Number of flat fields
+
+# GEOMETRY PARAMETERS
+kold: 0       # Results with old geometry
+knew: 1       # Results with new geometry (both are possible successively)
+is: 1536      # CCD X-dimension (pixels)
+js: 1024      # CCD Y-dimension (pixels)
+li: 442000    # Field stop length (arcsec/1000)
+lj: 61000     # Field stop width (arcsec/1000)
+jypas: 45000  # Translation between images for correlations (arcsec/1000)
+nline: 1      # Spectral line index
+ncam1: 1      # Detector index
+nm: 9         # Number of channels
+lbda: 6563    # Line wavelength (Angstrom)
+dlbd: 300     # Wavelength distance between channels (mA)
+mupris: 9000  # Translation between output channels (microns)
+mustep: 2500  # Distance between successive slits (microns)
+
+nwinp: 1      # Number of simultaneous detectors
+interc: 15    # Approximate distance between right edge of a channel and left edge of next one (CCD pixels)
+nbcln: 1024   # Final number of X-CCD pixels
+nblgn: 1536   # Final number of Y-CCD pixels
+invern: 0     # 0 = j-value of pixels of same wavelength decreases with channels
+              # 1 = j-value of pixels of same wavelength increases with channels
+
+# DARK CURRENT SUBTRACTION
+idc: 1        # Generally 1
+              # 0 = dark current not subtracted
+              # -1 = dark current not available
+
+# CHANNEL EDGE DETECTION THRESHOLDS
+si: 15        # Intensity threshold for channel edges detection versus X
+              # 0 = automatic detection for si, sgi, sj, sgj
+mingrad: 8    # Minimum threshold of intensity gradient in newgeom
+interp: 1     # Parabolic interpolation of intensity gradients
+sgi: 8        # Intensity threshold for intensity gradients versus X
+sj: 15        # Intensity threshold versus Y
+sgj: 5        # Gradient threshold versus Y
+iadd: 0       # For z(j) add ii-iadd,...,ii+iadd data
+
+# CHANNEL GEOMETRY
+milangi: -40  # Approximated angle between longer edge of channels and CCD (radian/1000)
+milgeo: 2000  # Threshold for geometry accuracy: max departure between values and regression lines (pixel/1000)
+nleft: 0      # Interpolated approximations for bad channels (left)
+nright: 0     # Interpolated approximations for bad channels (right)
+
+# PIXEL RANGES
+i1: 1         # First useful pixel in i-direction
+i2m: 0        # Last useful pixel in i-direction is i2 = im - i2m (im = total number of pixels)
+j1: 1         # Same definitions for j
+j2m: 0
+
+# CURVATURE PARAMETERS
+lip: 40       # The curvature of channels is determined by 3 intervals around 3 points
+              # If L is the length of the longer edge, the points are located at:
+              # L*(0.5-lip/100) and L*(0.5+lip/100)
+jeps: 20      # The accurate determination of longest edges is searched around approximate values +/- jeps pixels
+intvi: 60     # Edges parallel to i are determined by cuts along j, averaged over +/- intvi
+intvj: 30     # Similar for short edges parallel to j, with intervals:
+              # left end - left end + intvj, right end - right end - intvj
+leps: 50      # Detection of points with maximum gradient in 2 steps:
+              # 1) Approximate values corresponding to signal = intensity threshold
+              # 2) Search of maximum gradient in intervals +/- leps around these values
+
+# USEFUL CHANNELS
+n1: 1         # Useful channels are numbers n so that n1 <= n <= (nm - n1 + 1)
+              # where nm is total number of observed channels
+
+# DISTORTION
+distor: 1     # 1 = curvature of channels taken into account for detection
+              # 0 = curvature not taken into account
+
+# SYSTEM PARAMETERS
+iswap: 1      # 1 for LINUX (byte swapping)
+milsec: 500   # Output pixel size (arcsec/1000)
