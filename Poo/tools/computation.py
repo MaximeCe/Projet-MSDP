@@ -42,7 +42,7 @@ class Computation:
     def filtre_de_sobel(derivative):
         """Applies a Sobel filter to the given derivative data."""
         print("Applying Sobel filter to derivative...")
-        sobel_kernel = np.array([1,1, 0, -1,-1])
+        sobel_kernel = np.array([1, 0, -1])
         return {x: np.convolve(derivative[x], sobel_kernel, mode='same') for x in derivative}
     
     
@@ -64,7 +64,7 @@ class Computation:
 
         # Compute derivative along 5 positions centered around the given posotions
         if axis == 'x' or axis == 0:
-            derivatives = {y: np.mean(np.array([np.convolve(image[y+dy, :], [1, 1, 0, -1, -1], mode='same') for dy in range(-2, 3)]), axis=0) for y in positions}
+            derivatives = {y: np.mean(np.array([np.convolve(image[y+dy, :], [2, 1, 0, -1, -2], mode='same') for dy in range(-2, 3)]), axis=0) for y in positions}
         elif axis == 'y' or axis == 1:
             derivatives = {x: np.diff(image[:, x]) for x in positions}
         else:
@@ -167,6 +167,74 @@ class Computation:
             plt.show()
 
         return mean_derivatives
+    
+    def asin_stretch(data):
+        """Apply an arcsine stretch to the data for better visualization."""
+        print("Applying arcsine stretch...")
+        data_min = np.min(data)
+        data_max = np.max(data)
+        stretched = np.arcsin((data - data_min) / (data_max - data_min) * 2 - 1) / (np.pi / 2)
+        stretched = (stretched + 1) / 2 * (data_max - data_min) + data_min
+        print("Arcsine stretch applied.")
+        return stretched
+    
+    def linear_stretch(data):
+        """Apply a linear stretch to the data for better visualization."""
+        print("Applying linear stretch...")
+        data_min = np.min(data)
+        data_max = np.max(data)
+        stretched = (data - data_min) / (data_max - data_min)
+        stretched = stretched * (data_max - data_min) + data_min
+        print("Linear stretch applied.")
+        return stretched
+    
+    def logarithmic_stretch(data):
+        """Apply a logarithmic stretch to the data for better visualization."""
+        print("Applying logarithmic stretch...")
+        data_min = np.min(data)
+        shifted = data - data_min + 1  # Shift to avoid log(0)
+        stretched = np.log(shifted)
+        stretched = (stretched - np.min(stretched)) / (np.max(stretched) - np.min(stretched)) * (np.max(data) - np.min(data)) + np.min(data)
+        print("Logarithmic stretch applied.")
+        return stretched
+    
+    def exponential_stretch(data, exponent=2):
+        """Apply an exponential stretch to the data for better visualization."""
+        print("Applying exponential stretch...")
+        data_min = np.min(data)
+        data_max = np.max(data)
+        normalized = (data - data_min) / (data_max - data_min)
+        stretched = normalized ** exponent
+        stretched = stretched * (data_max - data_min) + data_min
+        print("Exponential stretch applied.")
+        return stretched
+    
+    def square_root_stretch(data):
+        """Apply a square root stretch to the data for better visualization."""
+        print("Applying square root stretch...")
+        data_min = np.min(data)
+        data_max = np.max(data)
+        normalized = (data - data_min) / (data_max - data_min)
+        stretched = np.sqrt(normalized)
+        stretched = stretched * (data_max - data_min) + data_min
+        print("Square root stretch applied.")
+        return stretched
+    
+    def gaussian_filter(data, sigma=1):
+        """Apply a Gaussian filter to the data for noise reduction."""
+        print("Applying Gaussian filter...")
+        from scipy.ndimage import gaussian_filter
+        filtered = gaussian_filter(data, sigma=sigma)
+        print("Gaussian filter applied.")
+        return filtered
+    
+    def median_filter(data, size=3):
+        """Apply a median filter to the data for noise reduction."""
+        print("Applying median filter...")
+        from scipy.ndimage import median_filter
+        filtered = median_filter(data, size=size)
+        print("Median filter applied.")
+        return filtered
 
     # ---- Interpolations & géométrie ----
     @staticmethod

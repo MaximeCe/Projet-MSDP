@@ -1,0 +1,115 @@
+# MSDP Data Processing Configuration
+# Auto-generated and updated during processing
+# Corresponds to ms.par parameters from Fortran code
+
+geometry:
+  # ===== FIELD GEOMETRY (ms.par section GEOMETRY) =====
+  # Field stop dimensions in arcsec/1000
+  li: null  # ms.par: li - field stop length (will be computed from data)
+  lj: null  # ms.par: lj - field stop width (will be computed from data)
+  
+  # Channel configuration
+  nm: 9  # ms.par: nm - number of spectral channels (9 for Meudon H-alpha)
+  
+  # CCD and output dimensions
+  nbcln: 1024  # ms.par: nbcln - number of X-CCD pixels
+  nblgn: 1536  # ms.par: nblgn - number of Y-CCD pixels
+  interc: 15  # ms.par: interc - approximate distance between channels (CCD pixels)
+  milsec: 500  # ms.par: milsec - output pixel size (arcsec/1000) → 0.5"/pixel
+  
+  # Useful region limits
+  i1: 1  # ms.par: i1 - first useful pixel in i-direction
+  i2m: 0  # ms.par: i2m - last useful pixel offset (i2 = im - i2m)
+  j1: 1  # ms.par: j1 - first useful pixel in j-direction
+  j2m: 0  # ms.par: j2m - last useful pixel offset
+  
+  # Geometric parameters
+  milangi: -40  # ms.par: milangi - angle between channel edge and CCD (radians/1000)
+  milangj: null  # ms.par: milangj - computed during geometry processing
+  lip: 40  # ms.par: lip - curvature determination percentage (parabola points at L*(0.5±lip/100))
+  jeps: 20  # ms.par: jeps - edge detection tolerance (±pixels for accurate edge search)
+  intvi: 60  # ms.par: intvi - integration interval for edges parallel to i (±pixels)
+  intvj: 30  # ms.par: intvj - integration interval for edges parallel to j (pixels)
+  leps: 50  # ms.par: leps - gradient maximum search interval (±pixels around threshold)
+  distor: 1  # ms.par: distor - 1=channel curvature taken into account, 0=linear only
+  ipermu: 1  # ms.par: ipermu - 1=permute CCD X and Y coordinates
+
+detection:
+  # ===== EDGE DETECTION PARAMETERS =====
+  # Intensity and gradient thresholds for channel edge detection
+  threshold_factor: 0.1  # Python THRESHOLD_FACTOR - for image masking (10% of max)
+  si: 15  # ms.par: si - intensity threshold for edge detection vs X (0=automatic)
+  sgi: 10  # ms.par: sgi - intensity gradient threshold vs X
+  sj: 15  # ms.par: sj - intensity threshold vs Y
+  sgj: 10  # ms.par: sgj - gradient threshold vs Y
+  mingrad: 8  # ms.par: mingrad - minimum intensity gradient for detection
+  interp: 1  # ms.par: interp - 1=parabolic interpolation of gradients, 0=no interpolation
+  
+  # Python-specific detection parameters
+  y_positions_offset: 60  # Python Y_POSITIONS_OFFSET - offset from top/bottom for edge detection
+  channel_offset: 0.05  # Python CHANNEL_OFFSET - avoid edge effects in calibration (5%)
+
+calibration:
+  # ===== SPECTRAL LINE AND WAVELENGTH CALIBRATION =====
+  # Spectral line parameters
+  lbda: 6563  # ms.par: lbda - spectral line wavelength (Angstroms) - H-alpha
+  dlbd: 300  # ms.par: dlbd - wavelength distance between channels (milliAngstroms)
+  targeted_lambda: 6562.8  # Python TARGETED_LAMBDA - precise H-alpha core (Angstroms)
+  lambda_offset: 0.3  # Python LAMBDA_OFFSET - wavelength step between channels (Angstroms)
+  
+  # Spectrograph geometry (slicer translations)
+  mupris: 9000  # ms.par: mupris - translation between output channels (microns)
+  mustep: 2500  # ms.par: mustep - distance between successive slits (microns)
+  
+  # Slicer parameters for wavelength calibration (see MSDP-methods Step 3a)
+  t1_mm: 2.5  # Python t1_mm - slicer input translation (millimeters)
+  t2_mm: 9.0  # Python t2_mm - slicer output translation (millimeters)
+  # Formula: Ts/Tg = t1/t2 where Ts=spectral translation, Tg=geometric translation
+  
+  # Dark current handling
+  idc: 1  # ms.par: idc - 1=dark subtracted, 0=not subtracted, -1=not available
+
+computed_values:
+  # ===== VALUES COMPUTED DURING PROCESSING =====
+  # These values are calculated from the data and saved here for reuse
+  # They correspond to geometric and calibration parameters in Fortran
+  
+  # Geometric computed values (from channel detection)
+  Wij: null  # Mean channel width in CCD pixels (computed from geometry)
+  Tgij: null  # Distance between successive channels in CCD pixels
+  W: null  # Channel width in solar pixels (after normalization)
+  Ts: null  # Spectral translation between channels in solar pixels (Ts = Tgij*W*t1/(t2*Wij))
+  
+  # Wavelength calibration
+  k: null  # Wavelength calibration coefficient (Angstroms/pixel) k = lambda_offset/Ts
+  
+  # Output dimensions
+  output_shape: null  # [height, width] of normalized solar channels in pixels
+  
+  # Photometric calibration ratios
+  photometric_ratios: {}  # Dict {channel_index: ratio} for intensity normalization between channels
+
+processing:
+  # ===== PROCESSING FLAGS (ms.par section SUCCESSIVE STEPS) =====
+  # Control which processing steps are executed
+  ixy: 1  # ms.par: ixy - compute average files (dark, flat, field-stop)
+  igeom: 1  # ms.par: igeom - geometry computation
+  iflat: 0  # ms.par: iflat - calibration
+  ibmc: 0  # ms.par: ibmc - elementary calibrated c-files (1 file per time)
+  icmd: 0  # ms.par: icmd - d-files (spectroheliograms and I/V maps)
+  ides: 0  # ms.par: ides - plots
+  iquick: 0  # ms.par: iquick - q-files for full scanned targets
+  igrayq: 0  # ms.par: igrayq - plots of q-files
+  
+  # Automatic plotting flags
+  igeo: 1  # ms.par: igeo - automatic plot of geo.ps after geometry
+  iflat1: 0  # ms.par: iflat1 - plot flat1.ps
+  iflat2: 0  # ms.par: iflat2 - plot flat2.ps
+  ical: 0  # ms.par: ical - plot cal.ps after calibration
+
+files:
+  # ===== FILE PATHS =====
+  # Paths to input data files
+  flat_path: null
+  dark_path: null
+  lights_path: []
