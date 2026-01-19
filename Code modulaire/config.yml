@@ -1,0 +1,66 @@
+geometry:
+  li: null
+  lj: null
+  nm: 9
+  nbcln: 1024
+  nblgn: 1536
+  interc: 15
+  milsec: 500
+  i1: 1
+  i2m: 0
+  j1: 1
+  j2m: 0
+  milangi: -40
+  milangj: null
+  lip: 40
+  jeps: 20
+  intvi: 60
+  intvj: 30
+  leps: 50
+  distor: 1
+  ipermu: 1
+detection:
+  threshold_factor: 0.1
+  si: 15
+  sgi: 10
+  sj: 15
+  sgj: 10
+  mingrad: 8
+  interp: 1
+  y_positions_offset: 60
+  channel_offset: 0.05
+calibration:
+  lbda: 6563
+  dlbd: 300
+  targeted_lambda: 6562.8
+  lambda_offset: 0.3
+  mupris: 9000
+  mustep: 2500
+  t1_mm: 2.5
+  t2_mm: 9.0
+  idc: 1
+computed_values:
+  Wij: null
+  Tgij: null
+  W: null
+  Ts: null
+  k: null
+  output_shape: null
+  photometric_ratios: {}
+processing:
+  ixy: 1
+  igeom: 1
+  iflat: 0
+  ibmc: 0
+  icmd: 0
+  ides: 0
+  iquick: 0
+  igrayq: 0
+  igeo: 1
+  iflat1: 0
+  iflat2: 0
+  ical: 0
+files:
+  flat_path: null
+  dark_path: null
+  lights_path: []
