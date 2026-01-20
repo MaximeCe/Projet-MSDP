@@ -45,7 +45,9 @@ computed_values:
   W: null
   Ts: null
   k: null
-  output_shape: null
+  output_shape:
+  - 628
+  - 421
   photometric_ratios: {}
 processing:
   ixy: 1

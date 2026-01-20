@@ -20,7 +20,7 @@ class Computation:
     # ==================== IMAGE PROCESSING ====================
 
     @staticmethod
-    def median_filter(data, size=3):
+    def median_filter(data, size=7):
         """Apply a median filter for noise reduction."""
         from scipy.ndimage import median_filter
         return median_filter(data, size=size)
@@ -87,35 +87,81 @@ class Computation:
 
         if axis == 0:  # Derivative along X
             # Smooth over 5 rows (±2) and use gradient kernel
-            kernel = np.array([2, 1, 0, -1, -2])
+            kernel = np.array([1, 0, -1])
             for y in positions:
-                # Average over 5 adjacent rows for robustness
-                rows = [image_data[y + dy, :]
-                        for dy in range(-2, 3) if 0 <= y + dy < image_data.shape[0]]
-                if rows:
-                    smoothed = np.mean(rows, axis=0)
-                    derivatives[y] = np.convolve(smoothed, kernel, mode='same')
+                row = image_data[y, :]
+                derivatives[y] = np.convolve(row, kernel, mode='same')
 
         elif axis == 1:  # Derivative along Y
+            kernel = np.array([1, 0, -1])
             for x in positions:
-                derivatives[x] = np.diff(image_data[:, x])
+                row = image_data[:, x]
+                derivatives[x] = np.convolve(row, kernel, mode='same')
 
         return derivatives
+    
+    @staticmethod
+    def compute_second_derivative_at_positions(image_data, axis, positions):
+        """
+        Compute second derivative at specific positions.
+        
+        Args:
+            image_data (np.ndarray): 2D image array
+            axis (int): 0 for X (horizontal), 1 for Y (vertical)
+            positions (list): List of positions to compute derivatives
+        
+        Returns:
+            dict: {position: second_derivative_array}
+        """
+        second_derivatives = {}
+
+        if axis == 0:  # Second derivative along X
+            kernel = np.array([1, -2, 1])
+            for y in positions:
+                row = image_data[y, :]
+                second_derivatives[y] = np.convolve(row, kernel, mode='same')
+
+        elif axis == 1:  # Second derivative along Y
+            kernel = np.array([1, -2, 1])
+            for x in positions:
+                col = image_data[:, x]
+                second_derivatives[x] = np.convolve(col, kernel, mode='same')
+
+        return second_derivatives
 
     @staticmethod
-    def filtre_de_sobel(derivatives):
+    def filtre_de_sobel(data):
         """
         Apply Sobel-like filter to enhance edges in derivative data.
         
         Args:
-            derivatives (dict): Dictionary of derivative arrays
+            data (np.ndarray): 1D array (line or column extracted from a matrix)
         
         Returns:
-            dict: Filtered derivatives
+            np.ndarray: Filtered array
         """
-        sobel_kernel = np.array([1, 0, -1])
-        return {key: np.convolve(deriv, sobel_kernel, mode='same')
-                for key, deriv in derivatives.items()}
+        sobel_kernel = np.array([1, -2, -1])
+        return np.convolve(data, sobel_kernel, mode='same')
+        
+    @staticmethod
+    def ROI_pooling(data, pool_size=30):
+        """
+        Apply ROI pooling by averaging over non-overlapping windows.
+        
+        Args:
+            data (np.ndarray): 1D array
+            pool_size (int): Size of each pooling window
+        
+        Returns:
+            np.ndarray: Pooled array
+        """
+        n_pools = len(data) // pool_size
+        pooled = np.array([
+            np.mean(data[i*pool_size:(i+1)*pool_size])
+            for i in range(n_pools)
+        ])
+        return pooled
+    
 
     @staticmethod
     def top_n_local_maxima(array, n):
@@ -287,3 +333,16 @@ class Computation:
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
         plt.show()
+
+    @staticmethod
+    def stack_images(images):
+        """
+        Stack multiple images using median combination.
+        
+        Args:
+            images (list): List of numpy arrays to stack
+        
+        Returns:
+            np.ndarray: Median-stacked image
+        """
+        return np.median(np.array(images), axis=0)

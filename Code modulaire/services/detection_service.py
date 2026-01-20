@@ -35,6 +35,9 @@ class DetectionService:
             dict: Dictionary with detected points for all channels
                   Format: {'as_': [...], 'bs': [...], ..., 'ks': [...], etc.}
         """
+        # Step 0: Preprocess image (if needed)
+        flat_image_data = Computation.median_filter(flat_image_data)
+        
         # Step 1: Detect horizontal edges (a, b, c, d, e, f points)
         horizontal_edges = self._detect_horizontal_edges(flat_image_data)
         
@@ -78,14 +81,19 @@ class DetectionService:
         ]
         
         # Step 4: Compute derivatives at these positions
-        derivatives = Computation.compute_first_derivative_at_positions(
+        derivatives = Computation.compute_second_derivative_at_positions(
             image_data, 
             axis=0,  # Along X
             positions=y_positions
         )
         
+        # TODO : Create a Tool for edge detection to seperate all the derivatives from the computation file
+        # Test Step 4: 3x3 Sobel filter + 30 Pooling
+        # data = Computation.ROI_pooling(image_data, pool_size=30)
+        # derivatives = Computation.filtre_de_sobel(data)
+        
         # Step 5: Apply Sobel filter to enhance edges
-        derivatives = Computation.filtre_de_sobel(derivatives)
+        # derivatives = Computation.filtre_de_sobel(derivatives)
         
         # Step 6: Detect edge positions (18 edges = 9 channels × 2 sides)
         detected_lines = self._detect_edge_positions_x(derivatives, y_positions)
@@ -108,7 +116,7 @@ class DetectionService:
         x_positions = self._compute_vertical_cut_positions(be_points)
         
         # Step 2: Compute derivatives along Y at these X positions
-        derivatives = Computation.compute_first_derivative_at_positions(
+        derivatives = Computation.compute_second_derivative_at_positions(
             image_data,
             axis=1,  # Along Y
             positions=x_positions

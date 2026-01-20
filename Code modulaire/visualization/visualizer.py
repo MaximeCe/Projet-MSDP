@@ -123,7 +123,7 @@ class MSDPVisualizer:
 
         # Plot each channel's edges
         x_range = np.arange(image_data.shape[1])
-        colors = plt.cm.rainbow(np.linspace(0, 1, len(channels)))
+        colors = plt.cm.get_cmap('viridis')(np.linspace(0, 1, len(channels)))
 
         for idx, channel in enumerate(channels):
             color = colors[idx]

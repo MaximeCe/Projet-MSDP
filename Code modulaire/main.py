@@ -13,63 +13,6 @@ from services.detection_service import DetectionService
 from services.calibration_service import CalibrationService
 
 
-def stack_images(images):
-    """
-    Stack multiple images using median combination.
-    
-    Args:
-        images (list): List of numpy arrays to stack
-    
-    Returns:
-        np.ndarray: Median-stacked image
-    """
-    return np.median(np.array(images), axis=0)
-
-
-def stack_folder(folder_name, output_dir='master'):
-    """
-    Stack all FITS images in a folder and save the master.
-    
-    Args:
-        folder_name (str): Name of folder containing FITS files
-        output_dir (str): Directory to save master file
-    
-    Returns:
-        str: Path to created master file
-    """
-    print(f"\nStacking images from '{folder_name}'...")
-
-    # Create output directory if needed
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # Find all FITS files
-    image_files = [f for f in os.listdir(folder_name)
-                   if f.endswith('.fit') or f.endswith('.fits')]
-
-    if not image_files:
-        print(f"   No FITS files found in {folder_name}")
-        return None
-
-    print(f"   Found {len(image_files)} files")
-
-    # Load all images
-    images = [Io.load_fits(os.path.join(folder_name, f)) for f in image_files]
-    images = [img for img in images if img is not None]
-
-    if not images:
-        print(f"   Failed to load images")
-        return None
-
-    # Stack and save
-    stacked = stack_images(images)
-    output_path = os.path.join(output_dir, f'{folder_name}.fits')
-    Io.save_fits(stacked, output_path)
-
-    print(f"   Saved master to: {output_path}")
-    return output_path
-
-
 def main():
     """
     Main processing workflow using the modular pipeline.
@@ -99,22 +42,6 @@ def main():
     dark_path = 'master/Darks.fits'
     flat_path = 'master/Flats.fits'
 
-    if not os.path.exists(dark_path):
-        print("Creating master dark frame...")
-        dark_path = stack_folder("Darks")
-    else:
-        print(f"Using existing master dark: {dark_path}")
-
-    if not os.path.exists(flat_path):
-        print("Creating master flat frame...")
-        flat_path = stack_folder("Flats")
-    else:
-        print(f"Using existing master flat: {flat_path}")
-
-    if not dark_path or not flat_path:
-        print("\n❌ Error: Failed to create/find master calibration frames")
-        return
-
     # ===== STEP 3: INITIALIZE PIPELINE =====
     print("\n[Pipeline Initialization]")
 
@@ -139,7 +66,7 @@ def main():
         flat_path=flat_path,
         dark_path=dark_path,
         num_channels=9,
-        visualize=False  # Set to True to see plots
+        visualize=True  # Set to True to see plots
     )
 
     # ===== STEP 5: DISPLAY RESULTS =====
@@ -242,4 +169,4 @@ if __name__ == "__main__":
     main()
 
     # Optionally demonstrate architecture
-    # demonstrate_modular_architecture()
+    demonstrate_modular_architecture()
