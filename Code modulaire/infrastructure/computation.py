@@ -9,7 +9,7 @@ import numpy as np
 class Computation:
     """
     Static utility class for mathematical computations.
-    
+
     Organized into sections:
     - Image processing (filters, stretches)
     - Derivatives and edge detection
@@ -59,10 +59,10 @@ class Computation:
         """
         Compute mean first derivative along X-axis across all columns.
         Used for detecting field-of-view bounds.
-        
+
         Args:
             image_data (np.ndarray): 2D image array
-        
+
         Returns:
             np.ndarray: Mean derivative along Y
         """
@@ -74,12 +74,12 @@ class Computation:
     def compute_first_derivative_at_positions(image_data, axis, positions):
         """
         Compute first derivative at specific positions with smoothing.
-        
+
         Args:
             image_data (np.ndarray): 2D image array
             axis (int): 0 for X (horizontal), 1 for Y (vertical)
             positions (list): List of positions to compute derivatives
-        
+
         Returns:
             dict: {position: derivative_array}
         """
@@ -99,17 +99,17 @@ class Computation:
                 derivatives[x] = np.convolve(row, kernel, mode='same')
 
         return derivatives
-    
+
     @staticmethod
     def compute_second_derivative_at_positions(image_data, axis, positions):
         """
         Compute second derivative at specific positions.
-        
+
         Args:
             image_data (np.ndarray): 2D image array
             axis (int): 0 for X (horizontal), 1 for Y (vertical)
             positions (list): List of positions to compute derivatives
-        
+
         Returns:
             dict: {position: second_derivative_array}
         """
@@ -130,48 +130,89 @@ class Computation:
         return second_derivatives
 
     @staticmethod
+    def compute_sobel_filter_at_positions(data, axis, positions):
+        """Apply Sobel-like filter to calculate the second deriivative with a 30px ROI pooling at the specified positions."""
+        sobel_results = {}
+
+        if axis == 0:  # Sobel filter along X
+            pooled = Computation.ROI_pooling(
+                data, pool_size=30, axis=0, positions=positions)
+            for y, line in zip(positions, pooled):
+                filtered = Computation.Log(line)
+                sobel_results[y] = filtered
+
+        elif axis == 1:  # Sobel filter along Y
+            pooled = Computation.ROI_pooling(
+                data, pool_size=30, axis=1, positions=positions)
+            for x, col in zip(positions, pooled):
+                filtered = Computation.Log(col)
+                sobel_results[x] = filtered
+
+        return sobel_results
+
+    @staticmethod
     def filtre_de_sobel(data):
         """
         Apply Sobel-like filter to enhance edges in derivative data.
-        
+
         Args:
             data (np.ndarray): 1D array (line or column extracted from a matrix)
-        
+
         Returns:
             np.ndarray: Filtered array
         """
         sobel_kernel = np.array([1, -2, -1])
         return np.convolve(data, sobel_kernel, mode='same')
-        
-    @staticmethod
-    def ROI_pooling(data, pool_size=30):
-        """
-        Apply ROI pooling by averaging over non-overlapping windows.
-        
-        Args:
-            data (np.ndarray): 1D array
-            pool_size (int): Size of each pooling window
-        
-        Returns:
-            np.ndarray: Pooled array
-        """
-        n_pools = len(data) // pool_size
-        pooled = np.array([
-            np.mean(data[i*pool_size:(i+1)*pool_size])
-            for i in range(n_pools)
-        ])
-        return pooled
-    
 
     @staticmethod
-    def top_n_local_maxima(array, n):
+    def Log(line, sigma=3):
+        """
+        Apply Laplacian of Gaussian (LoG) filter for edge detection.
+        """
+        from scipy.ndimage import gaussian_laplace
+        return gaussian_laplace(line, sigma=sigma)
+
+    @staticmethod
+    def ROI_pooling(image_data, positions, axis=0, pool_size=30):
+        """
+        Apply ROI pooling by averaging over the perpendicular axis.
+        Args :
+            image_data (np.ndarray): 2D image array
+            positions (list): List of positions to pool around
+            axis (int): 0 for X (horizontal), 1 for Y (vertical)
+            pool_size (int): Size of the pooling window
+        Returns:
+            list[np.ndarray]: List of pooled arrays (one per position)
+            """
+        pooled = []
+        half_pool = pool_size // 2
+
+        if axis == 0:  # Pooling along X (average rows around position)
+            for y in positions:
+                y_start = max(0, y - half_pool)
+                y_end = min(image_data.shape[0], y + half_pool)
+                pooled_row = np.median(image_data[y_start:y_end, :], axis=0)
+                pooled.append(pooled_row)
+        elif axis == 1:  # Pooling along Y (average columns around position)
+            for x in positions:
+                x_start = max(0, x - half_pool)
+                x_end = min(image_data.shape[1], x + half_pool)
+                pooled_col = np.median(image_data[:, x_start:x_end], axis=1)
+                pooled.append(pooled_col)
+
+        return pooled
+
+    @staticmethod
+    def top_n_local_maxima(array, n, radius=20):
         """
         Find indices of top N local maxima in an array.
-        
+        If radius is specified, returns only the strongest maxima within non-overlapping radius windows.
+
         Args:
             array (np.ndarray): 1D array
             n (int): Number of maxima to find
-        
+            radius (int, optional): Radius in pixels. If set, only the strongest maximum within each radius window is kept
+
         Returns:
             list: Indices of top N local maxima, sorted by value (descending)
         """
@@ -182,9 +223,28 @@ class Computation:
             if array[i] > array[i-1] and array[i] > array[i+1]
         ]
 
-        # Sort by value (descending) and return top N indices
+        # Sort by value (descending)
         maxima.sort(key=lambda x: x[1], reverse=True)
-        return [idx for idx, _ in maxima[:n]]
+
+        # If radius is specified, filter out maxima within radius of stronger ones
+        if radius is not None:
+            filtered_maxima = []
+            excluded_ranges = []
+
+            for idx, val in maxima:
+                # Check if this maximum is within an excluded range
+                is_excluded = any(abs(idx - excl_idx) <= radius for excl_idx, _ in excluded_ranges)
+
+                if not is_excluded:
+                    filtered_maxima.append((idx, val))
+                    excluded_ranges.append((idx, val))
+
+                if len(filtered_maxima) >= n:
+                    break
+
+            return [idx for idx, _ in filtered_maxima]
+        else:
+            return [idx for idx, _ in maxima[:n]]
 
     # ==================== GEOMETRIC INTERPOLATIONS ====================
 
@@ -193,10 +253,10 @@ class Computation:
         """
         Fit a parabola through three points.
         Solves y = ax² + bx + c for coefficients a, b, c.
-        
+
         Args:
             p1, p2, p3 (tuple): Points as (x, y) tuples
-        
+
         Returns:
             tuple: (a, b, c) coefficients
         """
@@ -218,10 +278,10 @@ class Computation:
     def line_coefficients(p1, p2):
         """
         Compute line coefficients y = ax + b through two points.
-        
+
         Args:
             p1, p2 (tuple): Points as (x, y) tuples
-        
+
         Returns:
             tuple: (a, b) coefficients
         """
@@ -242,16 +302,16 @@ class Computation:
         """
         Find intersection between a parabola and a line.
         Uses discriminant of parabola to choose nearest solution.
-        
+
         Parabola: y = a*x² + b*x + c
         Line: y = a_l*x + b_l (stored as (0, a_l, b_l) for consistency)
-        
+
         Args:
             parabola (tuple): (a, b, c) coefficients
             line (tuple): (0, a_l, b_l) coefficients
             near_point (tuple): (x, y) to discriminate between two solutions
             display (bool): If True, plot the intersection (for debugging)
-        
+
         Returns:
             tuple: (x, y) intersection point
         """
@@ -338,10 +398,10 @@ class Computation:
     def stack_images(images):
         """
         Stack multiple images using median combination.
-        
+
         Args:
             images (list): List of numpy arrays to stack
-        
+
         Returns:
             np.ndarray: Median-stacked image
         """
