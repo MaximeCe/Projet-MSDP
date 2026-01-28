@@ -105,7 +105,7 @@ class GeometryService:
             left_parabola,
             bottom_line,
             near_points[2],  # Near point 'a' (bottom-left)
-            display=False
+            display=True
         )
 
         # C = intersection(left_parabola, top_line) near point 'c'

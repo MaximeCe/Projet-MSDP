@@ -249,30 +249,44 @@ class Computation:
     # ==================== GEOMETRIC INTERPOLATIONS ====================
 
     @staticmethod
-    def parabolic_interpolation(p1, p2, p3):
+    def parabolic_interpolation(p1, p2, p3, expected_sign=1):
         """
-        Fit a parabola through three points.
-        Solves y = ax² + bx + c for coefficients a, b, c.
-
-        Args:
-            p1, p2, p3 (tuple): Points as (x, y) tuples
-
-        Returns:
-            tuple: (a, b, c) coefficients
+        Interpole une parabole avec validation du signe de 'a'.
+        expected_sign: 1 pour une parabole convexe (U), -1 pour concave (pont).
         """
-        # Build system of equations: [x²  x  1] [a]   [y]
-        #                            [x²  x  1] [b] = [y]
-        #                            [x²  x  1] [c]   [y]
-        A = np.array([
-            [p1[0]**2, p1[0], 1],
-            [p2[0]**2, p2[0], 1],
-            [p3[0]**2, p3[0], 1]
-        ])
-        B = np.array([p1[1], p2[1], p3[1]])
+        points = np.array([p1, p2, p3])
+        x = points[:, 0]
+        y = points[:, 1]
 
-        # Solve for coefficients
-        coefficients = np.linalg.solve(A, B)
-        return tuple(coefficients)
+        # Construction de la matrice de Vandermonde
+        A = np.vander(x, 3)
+        B = y
+
+        try:
+            # 1. Calcul des coefficients (a, b, c)
+            coeffs = np.linalg.solve(A, B)
+            a, _, _ = coeffs
+
+            # 2. Vérification de la validité physique
+            # Si 'a' est du mauvais signe ou presque nul, on rejette la parabole
+            is_physically_wrong = np.sign(a) != np.sign(expected_sign)
+            # Seuil à ajuster selon ton échelle
+            is_nearly_linear = np.abs(a) < 1e-6
+
+            if is_physically_wrong or is_nearly_linear:
+                raise ValueError("Solution non physique ou trop linéaire")
+
+            return tuple(coeffs)
+
+        except (np.linalg.LinAlgError, ValueError):
+            # 3. FALLBACK : Régression linéaire sur les 3 points
+            # On ne peut plus faire d'interpolation exacte (3 points != 1 droite)
+            # On utilise la pseudo-inverse pour trouver la droite la plus proche
+            A_lin = np.vstack([x, np.ones(len(x))]).T
+            m, q = np.linalg.lstsq(A_lin, y, rcond=None)[0]
+
+            # On retourne (a=0, b=m, c=q) pour garder la signature (a, b, c)
+            return (0.0, m, q)
 
     @staticmethod
     def line_coefficients(p1, p2):
@@ -327,6 +341,8 @@ class Computation:
         # Discriminant
         delta = B**2 - 4*A*C
 
+        print(f"Finding intersection: delta={delta:.3f}")
+        
         if delta < 0:
             # No real solution - shouldn't happen with proper geometry
             print(f"Warning: No intersection found (delta={delta})")
@@ -352,7 +368,7 @@ class Computation:
         y_line = a_l * result[0] + b_l
         error = abs(y_parabola - y_line)
 
-        if error > 1.0:
+        if error > 1:
             print(f"Warning: Intersection error = {error:.3f} pixels")
 
         # Optional visualization for debugging

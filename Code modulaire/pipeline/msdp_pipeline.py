@@ -172,10 +172,10 @@ class MSDPPipeline:
 
             # Create Edge objects
             edges = [
-                Edge("parabola_left", *parabolas[0], channel),
-                Edge("parabola_right", *parabolas[1], channel),
-                Edge("line_top", *lines[0], channel),
-                Edge("line_bottom", *lines[1], channel)
+                Edge("parabola_left", *parabolas[0],channel= channel),
+                Edge("parabola_right", *parabolas[1], channel= channel),
+                Edge("line_top", *lines[0], channel = channel),
+                Edge("line_bottom", *lines[1], channel = channel)
             ]
             channel.set_edges(edges)
 
@@ -186,16 +186,16 @@ class MSDPPipeline:
                 channel_points['a'].xy(),
                 channel_points['d'].xy()
             ]
-            corners = self.geometry_service.compute_channel_corners(
+            corners: dict = self.geometry_service.compute_channel_corners(
                 parabolas, lines, near_points
             )
-
+            print(corners)
             # Add B and E from detected points
             final_points = {
-                'A': Point('A', *corners['A'], channel),
-                'C': Point('C', *corners['C'], channel),
-                'D': Point('D', *corners['D'], channel),
-                'F': Point('F', *corners['F'], channel),
+                'A': Point('A', *corners['A'], channel=channel),
+                'C': Point('C', *corners['C'], channel=channel),
+                'D': Point('D', *corners['D'], channel=channel),
+                'F': Point('F', *corners['F'], channel = channel),
                 'B': Point('B', channel_points['b'].x, channel_points['b'].y, channel),
                 'E': Point('E', channel_points['e'].x, channel_points['e'].y, channel)
             }
