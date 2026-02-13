@@ -39,8 +39,8 @@ def main():
     print("\n[Master Calibration Frames]")
 
     # Check if masters already exist
-    dark_path = 'master/Darks.fits'
-    flat_path = 'master/Flats.fits'
+    dark_path = 'Code modulaire/data/dark.fits'
+    flat_path = 'Code modulaire/data/flat.fits'
 
     # ===== STEP 3: INITIALIZE PIPELINE =====
     print("\n[Pipeline Initialization]")
@@ -90,7 +90,7 @@ def main():
     print("\n[Light Frame Processing]")
 
     # Find all light frames
-    lights_dir = "Lights"
+    lights_dir = "Code modulaire/data/lights"
     if os.path.exists(lights_dir):
         light_files = [f for f in os.listdir(lights_dir)
                        if f.endswith('.fit') or f.endswith('.fits')]

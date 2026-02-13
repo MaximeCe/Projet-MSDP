@@ -287,6 +287,43 @@ class Computation:
 
             # On retourne (a=0, b=m, c=q) pour garder la signature (a, b, c)
             return (0.0, m, q)
+    
+    @staticmethod
+    def parabolic_interpolation_vertical(p1, p2, p3):
+        """
+        Interpole une parabole de la forme x = ay^2 + by + c.
+        Utilisé pour les canaux MSDP où la courbure est fonction de Y.
+        
+        Vérification physique : a <= 0 (courbure concave vers la gauche ou presque droite).
+        """
+        points = np.array([p1, p2, p3])
+        x = points[:, 0]
+        y = points[:, 1]
+
+        # Construction de la matrice de Vandermonde sur Y (car x = f(y))
+        # Système : a*y^2 + b*y + c = x
+        A = np.vander(y, 3)
+        B = x
+
+        try:
+            coeffs = np.linalg.solve(A, B)
+            a, b, c = coeffs
+
+            # Validation physique stricte pour MSDP (a doit être négatif ou quasi nul)
+            # On tolère un a très légèrement positif dû au bruit, sinon on force linéaire
+            if a > 1e-5:
+                print(
+                    f"Warning: Positive curvature detected (a={a:.6f}). Forcing linear fit.")
+                raise ValueError("Curvature non-physique (a > 0)")
+
+            return tuple(coeffs)
+
+        except (np.linalg.LinAlgError, ValueError):
+            # Fallback : Régression linéaire x = my + p
+            A_lin = np.vstack([y, np.ones(len(y))]).T
+            m, p = np.linalg.lstsq(A_lin, x, rcond=None)[0]
+            # Retourne (a=0, b=m, c=p) pour signature (a,b,c)
+            return (0.0, m, p)
 
     @staticmethod
     def line_coefficients(p1, p2):
@@ -311,71 +348,103 @@ class Computation:
 
     # ==================== INTERSECTIONS ====================
 
-    @staticmethod
-    def find_intersection(parabola, line, near_point, display=False):
-        """
-        Find intersection between a parabola and a line.
-        Uses discriminant of parabola to choose nearest solution.
 
-        Parabola: y = a*x² + b*x + c
-        Line: y = a_l*x + b_l (stored as (0, a_l, b_l) for consistency)
+    @staticmethod
+    def find_intersection(parabola, line, near_point=None, display=False):
+        """
+        Find intersection between a vertical parabola and a line.
+
+        Parabola (Vertical): x = a_p*y² + b_p*y + c_p
+        Line (Standard): y = a_l*x + b_l  (stored as (0, a_l, b_l))
+
+        We solve by substituting y into x:
+        x = a_p*(a_l*x + b_l)² + b_p*(a_l*x + b_l) + c_p
 
         Args:
-            parabola (tuple): (a, b, c) coefficients
-            line (tuple): (0, a_l, b_l) coefficients
-            near_point (tuple): (x, y) to discriminate between two solutions
-            display (bool): If True, plot the intersection (for debugging)
+            parabola (tuple): (a, b, c) coefficients for x(y)
+            line (tuple): (0, a_l, b_l) coefficients for y(x)
+            near_point (tuple): Optional, used for debug or fallback
+            display (bool): Plot for debug
 
         Returns:
             tuple: (x, y) intersection point
         """
         a_p, b_p, c_p = parabola
-        _, a_l, b_l = line
+        _, m, k = line  # y = mx + k
 
-        # Solve: a_p*x² + b_p*x + c_p = a_l*x + b_l
-        # Rearrange: a_p*x² + (b_p - a_l)*x + (c_p - b_l) = 0
-        A = a_p + 1e-6  # Add small epsilon to avoid division by zero
-        B = b_p - a_l
-        C = c_p - b_l
+        # Equation becomes: x = a_p(mx+k)^2 + b_p(mx+k) + c_p
+        # x = a_p(m^2x^2 + 2mkx + k^2) + b_p(mx + k) + c_p
+        # Group by x powers:
+        # x^2: a_p * m^2
+        # x^1: a_p * 2mk + b_p * m - 1  (minus 1 because of the x on LHS)
+        # x^0: a_p * k^2 + b_p * k + c_p
 
-        # Discriminant
-        delta = B**2 - 4*A*C
+        A = a_p * m**2
+        B = a_p * 2 * m * k + b_p * m - 1
+        C = a_p * k**2 + b_p * k + c_p
 
-        print(f"Finding intersection: delta={delta:.3f}")
-        
-        if delta < 0:
-            # No real solution - shouldn't happen with proper geometry
-            print(f"Warning: No intersection found (delta={delta})")
-            return None
+        # If A is effectively zero (linear intersection or horizontal parabola axis)
+        if abs(A) < 1e-10:
+            if abs(B) < 1e-10:
+                return near_point  # Lines are parallel
+            x = -C / B
+        else:
+            delta = B**2 - 4*A*C
+            if delta < 0:
+                print(f"Warning: No real intersection. Delta={delta}")
+                return near_point
 
-        # Two solutions from quadratic formula
-        sqrt_delta = np.sqrt(delta)
-        x1 = (-B + sqrt_delta) / (2*A)
-        x2 = (-B - sqrt_delta) / (2*A)
+            sqrt_delta = np.sqrt(delta)
+            x1 = (-B + sqrt_delta) / (2*A)
+            x2 = (-B - sqrt_delta) / (2*A)
 
-        # Compute corresponding y values
-        y1 = a_p * x1**2 + b_p * x1 + c_p
-        y2 = a_p * x2**2 + b_p * x2 + c_p
+            # Select x closest to near_point if provided, else reasonable default
+            if near_point:
+                x = x1 if abs(
+                    x1 - near_point[0]) < abs(x2 - near_point[0]) else x2
+            else:
+                x = x1
 
-        # Choose solution nearest to the reference point
-        dist1 = np.hypot(x1 - near_point[0], y1 - near_point[1])
-        dist2 = np.hypot(x2 - near_point[0], y2 - near_point[1])
+        # Calculate corresponding y
+        y = m * x + k
 
-        result = (x1, y1) if dist1 < dist2 else (x2, y2)
+        result = (x, y)
 
-        # Validate solution (should satisfy both equations)
-        y_parabola = a_p * result[0]**2 + b_p * result[0] + c_p
-        y_line = a_l * result[0] + b_l
-        error = abs(y_parabola - y_line)
-
-        if error > 1:
-            print(f"Warning: Intersection error = {error:.3f} pixels")
-
-        # Optional visualization for debugging
-        if display:
-            Computation._plot_intersection(parabola, line, near_point, result)
+        if display and near_point:
+            # Simple debug plot
+            Computation._plot_intersection_vertical(
+                parabola, line, near_point, result)
 
         return result
+    
+    @staticmethod
+    def _plot_intersection_vertical(parabola, line, near_point, result):
+        import matplotlib.pyplot as plt
+        a_p, b_p, c_p = parabola
+        _, m, k = line
+
+        y_min = min(result[1], near_point[1]) - 20
+        y_max = max(result[1], near_point[1]) + 20
+        y_vals = np.linspace(y_min, y_max, 400)
+
+        # Plot x(y)
+        x_parabola = a_p * y_vals**2 + b_p * y_vals + c_p
+
+        # Plot line (needs inversion for plotting as x(y) or standard plot)
+        # We plot standard y vs x
+        x_min = min(x_parabola)
+        x_max = max(x_parabola)
+        x_line_vals = np.linspace(x_min, x_max, 100)
+        y_line_vals = m * x_line_vals + k
+
+        plt.figure(figsize=(6, 6))
+        plt.plot(x_parabola, y_vals, 'b-', label='Parabola x(y)')
+        plt.plot(x_line_vals, y_line_vals, 'r-', label='Line y(x)')
+        plt.scatter(*result, c='g', label='Intersection')
+        plt.scatter(*near_point, c='orange', label='Near')
+        plt.title('Intersection (Vertical Parabola)')
+        plt.legend()
+        plt.show()
 
     @staticmethod
     def _plot_intersection(parabola, line, near_point, result):

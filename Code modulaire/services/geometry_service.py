@@ -1,6 +1,6 @@
 """
 Geometry Service - Handles all geometric transformations for MSDP channels
-Extracted from channel.py and channel_normaliser.py
+Refactored to handle vertical parabolas (x as function of y) for channel edges
 """
 
 import numpy as np
@@ -12,66 +12,48 @@ EPSILON = 1e-12
 class GeometryService:
     """
     Service responsible for geometric operations on MSDP channels.
-    Implements geometric transformations from ms2.f (srect, newgeom).
-    
-    This service handles:
-    - Parabolic interpolation of channel edges
-    - Computation of channel corners (ABCDEF points)
-    - Normalization to rectangular solar coordinates
     """
 
     def __init__(self, config_manager):
-        """
-        Initialize geometry service with configuration.
-        
-        Args:
-            config_manager: ConfigManager instance with geometry parameters
-        """
         self.config = config_manager
         self.geometry_params = config_manager.get_geometry_params()
 
     def build_channel_edges(self, points):
         """
         Build parabolic and linear edges from detected points.
-        Corresponds to Fortran construction of paraboles and droites.
         
-        Args:
-            points (dict): Dictionary with keys 'a', 'b', 'c', etc.
-        
-        Returns:
-            tuple: (parabolas, lines) where:
-                   parabolas = [(a,b,c) for left edge, (a,b,c) for right edge]
-                   lines = [(0,a,b) for top edge, (0,a,b) for bottom edge]
+        CHANGES:
+        - Left/Right edges are now computed as x = f(y) using parabolic_interpolation_vertical
         """
         try:
-            # Left parabola through points a, b, c
-            parabola_left = Computation.parabolic_interpolation(
+            # Left parabola (Vertical, x(y)) through points a, b, c
+            parabola_left = Computation.parabolic_interpolation_vertical(
                 points['a'].xy(),
                 points['b'].xy(),
                 points['c'].xy()
             )
 
-            # Right parabola through points d, e, f
-            parabola_right = Computation.parabolic_interpolation(
+            # Right parabola (Vertical, x(y)) through points d, e, f
+            parabola_right = Computation.parabolic_interpolation_vertical(
                 points['d'].xy(),
                 points['e'].xy(),
                 points['f'].xy()
             )
 
-            # Top line through points l, n
+            # Top line through points l, n (Standard y = mx+p)
             line_top = Computation.line_coefficients(
                 points['l'].xy(),
                 points['n'].xy()
             )
 
-            # Bottom line through points k, m
+            # Bottom line through points k, m (Standard y = mx+p)
             line_bottom = Computation.line_coefficients(
                 points['k'].xy(),
                 points['m'].xy()
             )
 
             parabolas = [parabola_left, parabola_right]
-            # Lines stored as (0, a, b) for consistency with parabola format
+            # Lines stored as (0, a, b) for consistency
             lines = [(0, line_top[0], line_top[1]),
                      (0, line_bottom[0], line_bottom[1])]
 
@@ -82,86 +64,46 @@ class GeometryService:
 
     def compute_channel_corners(self, parabolas, lines, near_points):
         """
-        Compute the ABCDEF corner points from parabolas and lines.
-        Corresponds to Fortran computation of points ABCDEF from intersections.
-        
-        Args:
-            parabolas (list): [(a,b,c), (a,b,c)] for left and right edges
-            lines (list): [(0,a,b), (0,a,b)] for top and bottom edges
-            near_points (list): Approximate positions of corners for discrimination
-        
-        Returns:
-            dict: Corner points {'A': (x,y), 'B': (x,y), ..., 'F': (x,y)}
+        Compute the ABCDEF corner points.
+        Uses updated find_intersection which handles x(y) parabolas vs y(x) lines.
         """
-        # Extract parabolas and lines
-        left_parabola = parabolas[0]
-        right_parabola = parabolas[1]
-        top_line = lines[0]
-        bottom_line = lines[1]
+        left_parabola = parabolas[0]   # x = ay^2 + by + c
+        right_parabola = parabolas[1]  # x = ay^2 + by + c
+        top_line = lines[0]            # y = mx + p
+        bottom_line = lines[1]         # y = mx + p
 
-        # Compute intersections (corresponds to Fortran ABCDEF calculation)
-        # A = intersection(left_parabola, bottom_line) near point 'a'
+        # A = intersection(left_parabola, bottom_line) near 'a'
         corner_A = Computation.find_intersection(
-            left_parabola,
-            bottom_line,
-            near_points[2],  # Near point 'a' (bottom-left)
-            display=True
+            left_parabola, bottom_line, near_points[2], display=False
         )
 
-        # C = intersection(left_parabola, top_line) near point 'c'
+        # C = intersection(left_parabola, top_line) near 'c'
         corner_C = Computation.find_intersection(
-            left_parabola,
-            top_line,
-            near_points[0],  # Near point 'c' (top-left)
-            display=False
+            left_parabola, top_line, near_points[0], display=False
         )
 
-        # D = intersection(right_parabola, bottom_line) near point 'd'
+        # D = intersection(right_parabola, bottom_line) near 'd'
         corner_D = Computation.find_intersection(
-            right_parabola,
-            bottom_line,
-            near_points[3],  # Near point 'd' (bottom-right)
-            display=False
+            right_parabola, bottom_line, near_points[3], display=False
         )
 
-        # F = intersection(right_parabola, top_line) near point 'f'
+        # F = intersection(right_parabola, top_line) near 'f'
         corner_F = Computation.find_intersection(
-            right_parabola,
-            top_line,
-            near_points[1],  # Near point 'f' (top-right)
-            display=False
+            right_parabola, top_line, near_points[1], display=False
         )
-
-        # B and E are the middle points (directly from detected points)
-        # They will be set by the caller from points['b'] and points['e']
 
         return {
-            'A': corner_A,
-            'C': corner_C,
-            'D': corner_D,
-            'F': corner_F
+            'A': corner_A, 'C': corner_C, 'D': corner_D, 'F': corner_F
         }
 
     def compute_channel_size(self, corners):
-        """
-        Compute the output dimensions for a normalized solar channel.
-        Corresponds to channel_size in channel_normaliser.py.
-        
-        Args:
-            corners (list): [top-left, top-right, bottom-right, bottom-left]
-        
-        Returns:
-            tuple: (height, width) in pixels
-        """
-        # Corners order: [haut-gauche, haut-droit, bas-droit, bas-gauche]
+        """Compute the output dimensions for a normalized solar channel."""
         (x0, y0), (x1, y1), (x2, y2), (x3, y3) = corners
 
-        # Width = average of top and bottom widths
         width_top = np.hypot(x1 - x0, y1 - y0)
         width_bottom = np.hypot(x2 - x3, y2 - y3)
         width = int(round((width_top + width_bottom) / 2))
 
-        # Height = average of left and right heights
         height_left = np.hypot(x3 - x0, y3 - y0)
         height_right = np.hypot(x2 - x1, y2 - y1)
         height = int(round((height_left + height_right) / 2))
@@ -170,145 +112,108 @@ class GeometryService:
 
     def normalize_channel_to_rectangle(self, image_data, parabolas, output_shape):
         """
-        Transform a parabolic channel shape into a rectangular solar coordinate system.
-        Corresponds to extract_parabolic_shape_to_rect in channel_normaliser.py.
+        Transform a vertical parabolic channel shape into a rectangular solar coordinate system.
         
-        This implements the geometric transformation from ms3.f (channels).
-        
-        Args:
-            image_data (np.ndarray): Original CCD image
-            parabolas (list): [left, right, top, bottom] edge equations
-            output_shape (tuple): (height, width) of output rectangle
-        
-        Returns:
-            np.ndarray: Normalized rectangular channel data
+        UPDATED LOGIC:
+        - Assumes parabolas are x = ay^2 + by + c (left/right edges)
+        - Assumes lines are y = ax + b (top/bottom edges)
+        - Directly evaluates x positions from y, instead of solving quadratics.
         """
         h_out, w_out = output_shape
-
-        # Initialize output array with same dtype as input
         img_out = np.zeros(
             (h_out, w_out, *image_data.shape[2:]), dtype=image_data.dtype)
 
-        # Extract parabola coefficients
-        # Order: [left, right, top, bottom]
-        (a_g, b_g, c_g) = parabolas[0]  # Left (gauche)
-        (a_d, b_d, c_d) = parabolas[1]  # Right (droite)
-        (a_h, b_h, c_h) = parabolas[2]  # Top (haut)
-        (a_b, b_b, c_b) = parabolas[3]  # Bottom (bas)
+        # Unpack geometric entities
+        # Parabolas (vertical): x(y) = a*y^2 + b*y + c
+        (a_g, b_g, c_g) = parabolas[0]  # Left
+        (a_d, b_d, c_d) = parabolas[1]  # Right
 
-        # For each pixel in the output rectangle
+        # Lines (horizontal-ish): y(x) = a*x + b
+        (dummy1, m_h, k_h) = parabolas[2]  # Top
+        (dummy2, m_b, k_b) = parabolas[3]  # Bottom
+
+        # Pre-calculate normalized coordinates
+        v_coords = np.linspace(0, 1, h_out)
+        u_coords = np.linspace(0, 1, w_out)
+
+        # Iterate over output grid
         for i in range(h_out):
-            # Normalized vertical position (0 to 1)
-            v = i / (h_out - 1) if h_out > 1 else 0
+            v = v_coords[i]
 
+            # 1. First approximation of Y in CCD (linear map)
+            # We map v=0 to roughly top line average, v=1 to bottom line average
+            # Ideally we iterate to find exact Y, but for small tilts,
+            # estimating Y based on image height is a starting point,
+            # or better: interpolate between the Y-intercepts of lines.
+            y_approx = k_h + v * (k_b - k_h)
+
+            # 2. Refine Y/X mapping
+            # Since the top/bottom lines are functions of X, and X is function of Y,
+            # we can calculate exact x bounds for this specific y_approx row.
+
+            # Calculate Left/Right X boundaries at this Y
+            x_left = a_g * y_approx**2 + b_g * y_approx + c_g
+            x_right = a_d * y_approx**2 + b_d * y_approx + c_d
+
+            # Map the row of pixels
             for j in range(w_out):
-                # Normalized horizontal position (0 to 1)
-                u = j / (w_out - 1) if w_out > 1 else 0
+                u = u_coords[j]
 
-                # Map to CCD coordinates using parabolic boundaries
-                # Start with Y coordinate
-                y = v * (image_data.shape[0] - 1)
-
-                # Solve left and right parabolas to find X boundaries at this Y
-                xs_left = self._solve_parabola_for_x(a_g, b_g, c_g, y)
-                xs_right = self._solve_parabola_for_x(a_d, b_d, c_d, y)
-
-                if len(xs_left) == 0 or len(xs_right) == 0:
-                    continue  # No solution, skip this pixel
-
-                # Choose the appropriate solution for each side
-                x_left = min(xs_left) if a_g < 0 else max(xs_left)
-                x_right = min(xs_right) if a_d < 0 else max(xs_right)
-
-                # Interpolate X position
+                # Interpolate X position between left and right parabolas
                 x = x_left + u * (x_right - x_left)
 
-                # Compute Y from top and bottom parabolas
-                y_top = a_h * x**2 + b_h * x + c_h
-                y_bottom = a_b * x**2 + b_b * x + c_b
-                y = y_top + v * (y_bottom - y_top)
+                # 3. Re-calculate Y based on the top/bottom lines at this specific X
+                # This corrects for the tilt of the top/bottom lines
+                y_top_at_x = m_h * x + k_h
+                y_bottom_at_x = m_b * x + k_b
 
-                # Bilinear interpolation from source image
-                if 0 <= x < image_data.shape[1] and 0 <= y < image_data.shape[0]:
-                    # Use OpenCV-style subpixel extraction
-                    import cv2
-                    img_out[i, j] = cv2.getRectSubPix(
-                        image_data,
-                        (1, 1),
-                        (float(x), float(y))
-                    )
+                # The true Y for this (u,v) point is the interpolation between top/bottom lines
+                y = y_top_at_x + v * (y_bottom_at_x - y_top_at_x)
+
+                # Bilinear interpolation
+                if 0 <= x < image_data.shape[1] - 1 and 0 <= y < image_data.shape[0] - 1:
+                    # Optimized manual bilinear interp for speed or use cv2 if available
+                    x0, y0 = int(x), int(y)
+                    dx, dy = x - x0, y - y0
+
+                    p00 = image_data[y0, x0]
+                    p01 = image_data[y0, x0+1]
+                    p10 = image_data[y0+1, x0]
+                    p11 = image_data[y0+1, x0+1]
+
+                    val = (p00 * (1-dx) * (1-dy) +
+                           p01 * dx * (1-dy) +
+                           p10 * (1-dx) * dy +
+                           p11 * dx * dy)
+                    img_out[i, j] = val
                 else:
                     img_out[i, j] = 0
 
         return img_out.squeeze()
 
-    def _solve_parabola_for_x(self, a, b, c, y):
-        """
-        Solve y = a*x^2 + b*x + c for x.
-        Returns the two possible x values.
-        
-        Args:
-            a, b, c: Parabola coefficients
-            y: Y value to solve for
-        
-        Returns:
-            list: Possible x values (0, 1, or 2 solutions)
-        """
-        # Handle linear case
-        if abs(a) < EPSILON:
-            if abs(b) > EPSILON:
-                return [(y - c) / b]
-            else:
-                return []
-
-        # Quadratic formula: a*x^2 + b*x + (c-y) = 0
-        discriminant = b**2 - 4*a*(c - y)
-
-        if discriminant < 0:
-            return []
-
-        sqrt_disc = np.sqrt(discriminant)
-        x1 = (-b - sqrt_disc) / (2*a)
-        x2 = (-b + sqrt_disc) / (2*a)
-
-        return [x1, x2]
-
     def compute_geometric_statistics(self, channels):
-        """
-        Compute geometric statistics for validation.
-        Corresponds to Fortran distortion calculations and geo3.ps plots.
-        
-        Args:
-            channels (list): List of Channel objects with computed corners
-        
-        Returns:
-            dict: Statistics including mean channel width, spacing, distortion
-        """
-        # Mean channel width (Wij in CCD pixels)
+        """Compute geometric statistics for validation."""
         widths = []
         for channel in channels:
-            if hasattr(channel, 'points_final') and 'A' in channel.points_final and 'D' in channel.points_final:
-                A = channel.points_final['A']
-                D = channel.points_final['D']
-                width = np.sqrt((D.x - A.x)**2 + (D.y - A.y)**2)
-                widths.append(width)
+            if hasattr(channel, 'points_final'):
+                pf = channel.points_final
+                if 'A' in pf and 'D' in pf:
+                    # Width at bottom
+                    width = np.hypot(pf['D'].x - pf['A'].x,
+                                     pf['D'].y - pf['A'].y)
+                    widths.append(width)
 
-        Wij = np.mean(widths) if widths else None
+        Wij = np.mean(widths) if widths else 0.0
 
-        # Mean channel spacing (Tgij in CCD pixels)
         spacings = []
         for i in range(len(channels) - 1):
-            if hasattr(channels[i], 'points_final') and 'A' in channels[i].points_final:
-                if hasattr(channels[i+1], 'points_final') and 'A' in channels[i+1].points_final:
-                    A1 = channels[i].points_final['A']
-                    A2 = channels[i+1].points_final['A']
-                    spacing = A2.x - A1.x
+            if hasattr(channels[i], 'points_final') and hasattr(channels[i+1], 'points_final'):
+                p1 = channels[i].points_final
+                p2 = channels[i+1].points_final
+                if 'A' in p1 and 'A' in p2:
+                    spacing = p2['A'].x - p1['A'].x
                     spacings.append(spacing)
 
-        Tgij = np.mean(spacings) if spacings else None
+        Tgij = np.mean(spacings) if spacings else 0.0
 
-        return {
-            'Wij': Wij,
-            'Tgij': Tgij,
-            'num_channels': len(channels)
-        }
+        return {'Wij': Wij, 'Tgij': Tgij, 'num_channels': len(channels)}
