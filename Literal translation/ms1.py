@@ -132,33 +132,35 @@ class MSDPProcessor:
     def permute_data(self, data):
         """
         Permute CCD coordinates: swap X and Y axes and flip.
-        
-        This converts from CCD coordinates (1536 x 1024) to 
-        processing coordinates (1024 x 1536).
-        
-        Parameters:
-        -----------
-        data : ndarray
-            Input data array (is x js)
-        
-        Returns:
-        --------
-        ndarray : Permuted data array (isp x jsp)
-        """
-        # Original Fortran logic:
-        # do i=1,is (1536)
-        #   jp = i
-        #   do j=1,js (1024)
-        #     ip = js+1-j
-        #     tabpermu(ip,jp) = tab2(i,j)
 
+        This converts from CCD coordinates (1536 x 1024) to
+        processing coordinates (1024 x 1536).
+
+        Parameters
+        ----------
+        data : ndarray
+            Input data array (is x js) -- NOTE: astropy returns it as
+            (js, is) == (NAXIS2 rows, NAXIS1 cols) == (row, col).
+        """
+        # Original Fortran logic (ms1.f readfits + main):
+        #   tab2(i,j) holds the sample at (col=i, row=j);
+        #   do i=1,is (1536)     ! col
+        #     jp = i
+        #     do j=1,js (1024)   ! row
+        #       ip = js+1-j
+        #       tabpermu(ip,jp) = tab2(i,j)
+        #
+        # astropy gives the FITS array as data[row, col], i.e. data[j,i]
+        # for a sample at (col=i, row=j) in Fortran's 1-based indexing.
+        # Axis-correct translation:
+        #   permuted[js-1-j (row-flip), i (col)] = data[j (row), i (col)]
         permuted = np.zeros((self.isp, self.jsp), dtype=np.int32)
 
-        for i in range(self.is_ccd):
-            jp = i
-            for j in range(self.js_ccd):
-                ip = self.js_ccd - 1 - j
-                permuted[ip, jp] = data[i, j]
+        for i in range(self.is_ccd):      # col
+            jp = i                        # col -> jp
+            for j in range(self.js_ccd):  # row
+                ip = self.js_ccd - 1 - j  # row flip -> ip
+                permuted[ip, jp] = data[j, i]
 
         return permuted
 
