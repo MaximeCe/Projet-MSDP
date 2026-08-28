@@ -1,14 +1,57 @@
 """
 ms2.py - MSDP Data Processing: Step 2 - Geometry Module
 
-This module computes the geometry of MSDP spectrograph channels:
-1. Detects channel edges using intensity gradients
-2. Computes reference points (a,b,c,d,e,f and k,l,m,n)
-3. Extrapolates corner points (A,B,C,D,E,F) via line intersections
-4. Generates diagnostic plots (geo1.ps, geo2.ps, geo3.ps)
+This module computes the geometry of MSDP spectrograph channels, ported
+from the Fortran subroutine `newgeom` (ms2.f, lines ~410-748), itself
+called at the end of `SRECT` (ms2.f line 380: `call newgeom(meanflat)`).
 
-The geometry defines how to map CCD pixels to solar coordinates (X,Y) 
-within each spectral channel, accounting for optical distortions.
+Processing steps (mirrors ms2.f):
+1. Detects channel edges using intensity gradients (3 horizontal cuts)
+2. Detects vertical edges k,l,m,n
+3. Extrapolates corner points A,B,C,D,E,F via line intersections
+4. Generates diagnostic plots (geo1.ps, geo2.ps, geo3.ps in Fortran ->
+   geo1.pdf, geo2.pdf, geo3.pdf here)
+
+FIDELITY NOTES (read before trusting numeric output against the Fortran):
+
+1. Indexing convention. Fortran arrays are 1-based; numpy arrays are
+   0-based. This port keeps the Fortran-native constants (i1=5, i2=im-4,
+   ja=[151,501,851], jm=1024, etc.) exactly as written in ms2.f, and
+   converts to 0-based numpy indices only at the point of array access
+   (variables suffixed `_idx` / `_py`). Earlier revisions of this file
+   used the Fortran 1-based constants directly as numpy indices, which
+   is an off-by-one bug (e.g. cutting at row 151 instead of row 150,
+   and columns 1 too high) - fixed here.
+
+2. `SRECT`'s outer loop `do 190 nseuils=1,nsm` (ms2.f lines ~204-371)
+   builds a 20-entry threshold table (ksi/ksgi/ksj/ksgj) but, in the
+   portion of the source available for this port, the computed
+   si/sgi/sj/sgj values are never referenced again after being derived -
+   the loop body only re-reads and re-subtracts the dark/flat images
+   every iteration. That loop is NOT ported here: this module reproduces
+   `newgeom` itself (the routine that actually performs edge detection),
+   fed by a single dark-subtracted flat computed once in
+   `compute_geometry`. If the un-shown parts of SRECT do use those
+   threshold tables to pick between several candidate solutions, that
+   selection logic is not represented in this port - flagged rather than
+   guessed at.
+
+3. `intersec` (ms2.f lines 750-778) computes
+   `xres=(a*d+b)/(1.-ac)`. The comment above it derives the formula as
+   `xres=(a*d+b)/(1-a*c)`, but the code says `ac`, not `a*c` - in
+   Fortran that parses as a distinct, never-assigned implicit variable
+   (effectively ~0 in practice), so the shipped Fortran denominator is
+   really just `(1. - 0.)`, i.e. the `a*c` correction described in the
+   comment is likely never applied. `intersect_lines` below keeps the
+   mathematically-intended `1 - a*c` denominator (matching the comment,
+   not the letter of the code) since that is almost certainly the
+   intended geometry. If bit-for-bit reproduction of the legacy output
+   is required (e.g. to validate against archived results), that one
+   line needs to be changed back to a denominator of `1.0`.
+
+4. Byte-swap / SRECT's raw binary-file reading logic is not part of
+   this module (see ms1.py); `read_averaged_file` here relies on
+   astropy/plain binary parsing instead of Fortran unformatted I/O.
 """
 
 import numpy as np
@@ -30,10 +73,15 @@ class GeometryProcessor:
         self.log_file = open('ms.lis', 'a')  # Append to existing log
         self.xryr_file = open('xryr.lis', 'w')
 
-        # Image dimensions
+        # Image dimensions (ms2.f newgeom: im=1536, jm=1024, nm=9 -
+        # hardcoded in the Fortran regardless of ms.par)
         self.im = 1536
         self.jm = 1024
-        self.nm = self.params['nm']  # Number of channels (9)
+        self.nm = self.params['nm']  # Number of channels (should be 9)
+        if self.nm != 9:
+            self.log(f"WARNING: nm={self.nm} in parameter file, but "
+                      f"ms2.f hardcodes nm=9 inside newgeom - results "
+                      f"will not match the Fortran if this differs.")
 
         self.log("="*60)
         self.log("GEOMETRY PROCESSOR INITIALIZED")
@@ -127,10 +175,10 @@ class GeometryProcessor:
                 xx[nl, nc]: X-coordinate of point nl in channel nc
                 yy[nl, nc]: Y-coordinate of point nl in channel nc
                 
-                Point indices:
-                1-6: a,b,c,d,e,f (horizontal edges)
-                7-10: k,l,m,n (vertical edges)
-                11-16: A,B,C,D,E,F (extrapolated corners)
+                Point indices (0-based; Fortran nl-1):
+                0-5:   a,b,c,d,e,f (horizontal edges)
+                6-9:   k,l,m,n (vertical edges)
+                10-15: A,B,C,D,E,F (extrapolated corners)
         """
         self.log("\n" + "="*60)
         self.log("COMPUTING CHANNEL GEOMETRY")
@@ -149,13 +197,12 @@ class GeometryProcessor:
         self.log(f"Dark data shape: {dark_data.shape}")
         self.log(f"Flat data shape: {flat_data.shape}")
 
-        # Subtract dark from flat
+        # Subtract dark from flat (ms2.f SRECT, lines 323-332:
+        # lec(i)=lec(i)-lecx(i); if(lec(i).lt.0)lec(i)=1)
         self.log("\nSubtracting dark current from flat field...")
-        meanflat = flat_data - dark_data
+        meanflat = flat_data.astype(np.int32) - dark_data.astype(np.int32)
         meanflat[meanflat < 0] = 1  # Ensure no negative values
 
-        # Permute to get correct orientation for geometry detection
-        # meanflat is already (1536, 1024), just use it directly
         meanflat_md = meanflat.astype(np.int16)
 
         self.log(
@@ -171,316 +218,322 @@ class GeometryProcessor:
 
     def newgeom(self, meanflat):
         """
-        New geometry detection algorithm.
-        
-        Detects channel edges using intensity gradient maxima.
-        
+        New geometry detection algorithm - port of ms2.f `newgeom`
+        (lines 411-748).
+
+        All the constants below (i1, i2, ja, jc, xdel, ...) are kept as
+        the literal Fortran 1-based values, exactly as in ms2.f, for
+        direct comparison with the source. `_idx` suffixed variables are
+        the corresponding 0-based numpy indices, computed as
+        `fortran_value - 1` right where numpy indexing happens.
+
         Parameters:
         -----------
         meanflat : ndarray
-            Dark-subtracted flat field image (im x jm)
-        
+            Dark-subtracted flat field image (im x jm), 0-based numpy
+            array corresponding to Fortran's meanflat(1536,1024).
+
         Returns:
         --------
-        tuple : (xx, yy) reference point arrays
+        tuple : (xx, yy) reference point arrays, shape (20, nm), 0-based
         """
         self.log("\nNEW GEOMETRY DETECTION")
 
-        # Parameters
+        im, jm, nm = self.im, self.jm, self.nm
+
+        # ms2.f line 426: jtriple=1 (hardcoded "true" - always average
+        # 3 adjacent rows around each cut; there is no conditional
+        # boundary check in the Fortran because ja's values are always
+        # safely inside [2, jm-1]).
+        jtriple = True
+
+        # ms2.f lines 427-430
         i1 = 5
-        i2 = self.im - 4
-        j1 = 1
-        j2 = self.jm
+        i2 = im - 4
+        i1_idx = i1 - 1
+        i2_idx = i2 - 1
 
-        # Three horizontal cuts for edge detection
-        ja = np.array([151, 501, 851])  # 1-based: [1+150, 1+500, 1+850]
-        jc = ja[1]  # Central cut
+        # ms2.f lines 431-438
+        ja = [1 + 150, 1 + 500, 1 + 850]     # [151, 501, 851], Fortran 1-based
+        ja_idx = [j - 1 for j in ja]         # [150, 500, 850], 0-based
+        jc = ja[1]                            # 501
+        jc_idx = ja_idx[1]                    # 500
 
-        self.log(f"Detection cuts at j = {ja}")
+        self.log(f"Detection cuts at j (Fortran 1-based) = {ja}")
 
-        # Get gradient threshold
+        sig = [1.0, -1.0]
+
+        # ms.par: mingrad / interp
         mingrad = self.params['mingrad']
         interp = self.params['interp']
+        grt = mingrad
+        zgt = grt
 
         self.log(f"Minimum gradient threshold: {mingrad}")
         self.log(f"Parabolic interpolation: {interp}")
 
-        # Initialize arrays for reference points
-        # nl: point index (1-16), nc: channel index (1-9)
-        xx = np.zeros((20, self.nm))  # Using 20 to match Fortran indexing
-        yy = np.zeros((20, self.nm))
+        # xx/yy dimensioned like Fortran's xx(20,9): rows 0-15 used,
+        # 16-19 unused (kept for direct index correspondence with the
+        # Fortran source, where rows are 1-16).
+        xx = np.zeros((20, nm))
+        yy = np.zeros((20, nm))
 
-        # Compute normalization for central cut
-        zc = meanflat[i1:i2+1, jc].astype(float)
-        zmax = np.max(zc)
+        # ---------------------------------------------------------------
+        # zmax, zgmax from the FULL central column jc (ms2.f lines
+        # 454-471) - NOT clipped to i1:i2. This normalization is reused
+        # for every horizontal AND vertical cut later on.
+        # ---------------------------------------------------------------
+        zc_full = meanflat[:, jc_idx].astype(np.float64)          # length im
+        zmax = float(np.max(zc_full))
 
-        zgc = np.diff(zc)
-        zgmax = np.max(np.abs(zgc))
+        zgc_full = np.zeros(im)
+        zgc_full[:im - 1] = zc_full[1:] - zc_full[:-1]
+        # ms2.f only fills zgc(1..im-1); zgc(im) is never assigned.
+        # Treated as 0 here (see module docstring, fidelity note 1-ish).
+        zgmax = float(np.max(np.abs(zgc_full[:im - 1])))
 
-        self.log(
-            f"Central cut normalization: zmax={zmax:.1f}, zgmax={zgmax:.1f}")
+        zc_norm_full = 100.0 * zc_full / zmax
+        zgc_norm_full = 100.0 * zgc_full / zgmax
 
-        # Normalize for detection
-        zc = 100.0 * zc / zmax
-        zgc_norm = np.zeros(len(zc))
-        zgc_norm[:-1] = 100.0 * zgc / zgmax
-        zgc_norm[-1] = zgc_norm[-2]
+        self.log(f"Central cut normalization: zmax={zmax:.1f}, zgmax={zgmax:.1f}")
 
-        grt = mingrad  # Gradient threshold
-        sig = np.array([1.0, -1.0])  # Positive and negative gradients
-
-        # Detect edges at three j positions (a,b,c and d,e,f)
+        # ---------------------------------------------------------------
+        # Three horizontal cuts (ms2.f do30 nj=1,3, lines 474-549)
+        # ---------------------------------------------------------------
         self.log("\nDetecting horizontal channel edges...")
 
-        for nj in range(3):  # Three cuts
-            jj = ja[nj]
-            self.log(f"\nCut {nj+1} at j = {jj}")
+        for nj in range(3):  # python nj = Fortran nj - 1
+            jj_idx = ja_idx[nj]
+            self.log(f"\nCut {nj+1} at j (Fortran) = {ja[nj]}")
 
-            # Extract and normalize intensity profile
-            z = meanflat[i1:i2+1, jj].astype(float)
+            z = meanflat[i1_idx:i2_idx + 1, jj_idx].astype(np.float64)
+            if jtriple:
+                z = (meanflat[i1_idx:i2_idx + 1, jj_idx - 1].astype(np.float64) +
+                     meanflat[i1_idx:i2_idx + 1, jj_idx].astype(np.float64) +
+                     meanflat[i1_idx:i2_idx + 1, jj_idx + 1].astype(np.float64)) / 3.0
 
-            # Option: average over 3 adjacent rows
-            if jj > 0 and jj < self.jm - 1:
-                z = (meanflat[i1:i2+1, jj-1] +
-                     meanflat[i1:i2+1, jj] +
-                     meanflat[i1:i2+1, jj+1]) / 3.0
+            zg = np.zeros_like(z)
+            zg[:-1] = z[1:] - z[:-1]
+            zg[-1] = zg[-2]  # ms2.f line 493: zg(i2)=zg(i2-1)
 
-            # Compute gradient
-            zg = np.diff(z)
-            zg_extended = np.zeros(len(z))
-            zg_extended[:-1] = zg
-            zg_extended[-1] = zg[-1]
-
-            # Normalize
             z = 100.0 * z / zmax
-            zg_extended = 100.0 * zg_extended / zgmax
+            zg = 100.0 * zg / zgmax
 
-            # Detect edges for both gradient signs
-            for is_sign in range(2):  # 0: positive, 1: negative
-                if is_sign == 0:
-                    l = nj  # Index for xx, yy
-                else:
-                    l = nj + 3
+            # do20 is=1,2 (sign of the gradient)
+            for is_sign in range(2):
+                l = nj if is_sign == 0 else nj + 3
 
-                n = 0  # Edge counter
-
-                # Scan for gradient maxima
-                for i in range(1, len(zg_extended) - 1):
-                    piv2 = sig[is_sign] * zg_extended[i]
-
-                    # Check if above threshold
-                    if piv2 < grt:
+                n = 0  # edge counter (Fortran n=0, then n=n+1 -> 1-based)
+                # ms2.f do10 i=i1+1,i2-1  ->  local index k = i-i1
+                for k in range(1, len(z) - 1):
+                    piv2 = sig[is_sign] * zg[k]
+                    if piv2 < zgt:
                         continue
-
-                    # Check if local maximum
-                    piv1 = sig[is_sign] * zg_extended[i-1]
-                    piv3 = sig[is_sign] * zg_extended[i+1]
-
+                    piv1 = sig[is_sign] * zg[k - 1]
+                    piv3 = sig[is_sign] * zg[k + 1]
                     if piv2 < piv1 or piv2 < piv3:
                         continue
 
-                    # Found edge
-                    eps = 0.5  # Default sub-pixel position
-
-                    # Parabolic interpolation for sub-pixel accuracy
-                    if interp == 1:
-                        eps = self.parabolic_max(zg_extended, i)
-
-                    # Store edge position (0-based coordinates)
-                    xx[l, n] = i + i1 + eps - 1
-                    yy[l, n] = jj - 1
-
-                    self.log(f"  Edge {n+1} at i={i+i1}, gradient={piv2:.1f}, "
-                             f"eps={eps:.2f} -> X={xx[l,n]:.2f}, Y={yy[l,n]:.2f}")
-
-                    n += 1
-
-                    if n >= self.nm:
-                        break
-
-        # Copy some points for convenience
-        for n in range(self.nm):
-            xx[14, n] = xx[4, n]  # E = e
-            yy[14, n] = yy[4, n]
-            xx[11, n] = xx[1, n]  # B = b
-            yy[11, n] = yy[1, n]
-
-        # Detect vertical edges (k,l,m,n points)
-        self.log("\nDetecting vertical channel edges...")
-        xdel = 25.0  # Horizontal offset for vertical cuts
-
-        for n in range(self.nm):
-            for l in range(7, 11):  # k,l,m,n
-                # Determine position and range for vertical cut
-                if l == 7:  # k
-                    ii = int(xx[0, n] + 1 + xdel)
-                    jj1 = 1
-                    jj2 = int(yy[0, n] + 1)
-                    is_sign = 0
-                elif l == 8:  # l
-                    ii = int(xx[2, n] + 1 + xdel)
-                    jj1 = int(yy[2, n] + 1)
-                    jj2 = self.jm
-                    is_sign = 1
-                elif l == 9:  # m
-                    ii = int(xx[3, n] + 1 - xdel)
-                    jj1 = 1
-                    jj2 = int(yy[3, n] + 1)
-                    is_sign = 0
-                else:  # l == 10, n
-                    ii = int(xx[5, n] + 1 - xdel)
-                    jj1 = int(yy[5, n] + 1)
-                    jj2 = self.jm
-                    is_sign = 1
-
-                # Extract vertical profile
-                if ii < 0 or ii >= self.im:
-                    continue
-
-                z_vert = meanflat[ii, jj1:jj2].astype(float)
-
-                # Compute gradient (with sign)
-                zg_vert = sig[is_sign] * np.diff(z_vert)
-                zg_vert_extended = np.zeros(len(z_vert))
-                zg_vert_extended[:-1] = zg_vert
-                zg_vert_extended[-1] = zg_vert[-1]
-
-                # Normalize
-                z_vert = 100.0 * z_vert / zmax
-                zg_vert_extended = 100.0 * zg_vert_extended / zgmax
-
-                # Find maximum gradient
-                for jj in range(1, len(zg_vert_extended) - 1):
-                    piv2 = zg_vert_extended[jj]
-
-                    if piv2 < grt:
-                        continue
-
-                    piv1 = zg_vert_extended[jj-1]
-                    piv3 = zg_vert_extended[jj+1]
-
-                    if piv2 < piv1 or piv2 < piv3:
-                        continue
-
-                    # Found edge
                     eps = 0.5
                     if interp == 1:
-                        eps = self.parabolic_max(zg_vert_extended, jj)
+                        eps = self.smax(zg, k)
 
-                    xx[l, n] = ii - 1
-                    yy[l, n] = jj + jj1 - 1 + eps
+                    if n >= nm:
+                        # ms2.f has no bounds check here (xx/yy are
+                        # dimensioned (.,9)); a real Fortran run finding
+                        # more than nm edges would silently corrupt
+                        # memory. This guard is a deliberate deviation
+                        # for safety.
+                        break
 
-                    break
+                    # i (Fortran 1-based) = i1 + k; xx(l,n)=i+eps-1 (0-based)
+                    xx[l, n] = (i1_idx + k) + eps
+                    yy[l, n] = jj_idx
 
-        # Compute corner points A,B,C,D,E,F via line intersections
-        self.log("\nComputing corner points via line intersections...")
+                    self.log(f"  Edge {n+1} at i(Fortran)={i1+k}, "
+                             f"gradient={piv2:.1f}, eps={eps:.2f} -> "
+                             f"X={xx[l,n]:.2f}, Y={yy[l,n]:.2f}")
+                    n += 1
 
-        for n in range(self.nm):
-            # Point A: intersection of lines (b,a) and (k,m)
-            x1, y1 = xx[1, n], yy[1, n]  # b
-            x2, y2 = xx[0, n], yy[0, n]  # a
-            x3, y3 = xx[6, n], yy[6, n]  # k
-            x4, y4 = xx[8, n], yy[8, n]  # m
-            xx[10, n], yy[10, n] = self.intersect_lines(x1, y1, x2, y2,
-                                                        x3, y3, x4, y4)
-
-            # Point B = b
+        # ms2.f lines 551-556: B=b, E=e (Fortran xx(12,n)=xx(2,n),
+        # xx(15,n)=xx(5,n) -> 0-based rows 11=1, 14=4)
+        for n in range(nm):
+            xx[14, n] = xx[4, n]
+            yy[14, n] = yy[4, n]
             xx[11, n] = xx[1, n]
             yy[11, n] = yy[1, n]
 
-            # Point C: intersection of lines (b,c) and (l,n)
-            x1, y1 = xx[1, n], yy[1, n]  # b
-            x2, y2 = xx[2, n], yy[2, n]  # c
-            x3, y3 = xx[7, n], yy[7, n]  # l
-            x4, y4 = xx[9, n], yy[9, n]  # n
-            xx[12, n], yy[12, n] = self.intersect_lines(x1, y1, x2, y2,
-                                                        x3, y3, x4, y4)
+        # ms2.f lines 558-581: distortion diagnostic (logged only, not
+        # used downstream - kept here purely for parity with the log
+        # output the Fortran produces).
+        distort = np.zeros((2, nm))
+        for n in range(nm):
+            distort[0, n] = xx[1, n] - (xx[0, n] + xx[2, n]) / 2.0
+            distort[1, n] = xx[4, n] - (xx[3, n] + xx[5, n]) / 2.0
+        valqm = float(np.sqrt(np.sum(distort[0]**2 + distort[1]**2) / (2.0 * nm)))
+        self.log(f"Distortion (quadratic mean, pixel units): {valqm:.3f}")
 
-            # Point D: intersection of lines (e,d) and (k,m)
-            x1, y1 = xx[4, n], yy[4, n]  # e
-            x2, y2 = xx[3, n], yy[3, n]  # d
-            x3, y3 = xx[8, n], yy[8, n]  # m
-            x4, y4 = xx[6, n], yy[6, n]  # k
-            xx[13, n], yy[13, n] = self.intersect_lines(x1, y1, x2, y2,
-                                                        x3, y3, x4, y4)
+        # ---------------------------------------------------------------
+        # Vertical edges k,l,m,n (ms2.f lines 582-646)
+        # ---------------------------------------------------------------
+        self.log("\nDetecting vertical channel edges...")
+        xdel = 25.0
 
-            # Point E = e
+        for n in range(nm):
+            for l in range(7, 11):  # rows 7-10: k,l,m,n
+                if l == 7:      # k
+                    ii_idx = int(xx[0, n] + xdel)
+                    jj_start = 0
+                    jj_stop_incl = int(yy[0, n])
+                    is_sign = 0
+                elif l == 8:    # l
+                    ii_idx = int(xx[2, n] + xdel)
+                    jj_start = int(yy[2, n])
+                    jj_stop_incl = jm - 1
+                    is_sign = 1
+                elif l == 9:    # m
+                    ii_idx = int(xx[3, n] - xdel)
+                    jj_start = 0
+                    jj_stop_incl = int(yy[3, n])
+                    is_sign = 0
+                else:           # l == 10, n
+                    ii_idx = int(xx[5, n] - xdel)
+                    jj_start = int(yy[5, n])
+                    jj_stop_incl = jm - 1
+                    is_sign = 1
+
+                if ii_idx < 0 or ii_idx >= im or jj_stop_incl <= jj_start:
+                    continue
+
+                z_vert = meanflat[ii_idx, jj_start:jj_stop_incl + 1].astype(np.float64)
+
+                zg_vert = np.zeros_like(z_vert)
+                zg_vert[:-1] = sig[is_sign] * (z_vert[1:] - z_vert[:-1])
+                zg_vert[-1] = zg_vert[-2]  # ms2.f line 625: zg(jj2)=zg(jj2-1)
+
+                z_vert = 100.0 * z_vert / zmax
+                zg_vert = 100.0 * zg_vert / zgmax
+
+                # ms2.f do40 jj=jj1+1,jj2-1 -> local k=1..len-2
+                for k in range(1, len(zg_vert) - 1):
+                    piv2 = zg_vert[k]
+                    if piv2 < zgt:
+                        continue
+                    piv1 = zg_vert[k - 1]
+                    piv3 = zg_vert[k + 1]
+                    if piv2 < piv1 or piv2 < piv3:
+                        continue
+
+                    eps = 0.5
+                    if interp == 1:
+                        eps = self.smax(zg_vert, k)
+
+                    xx[l, n] = ii_idx
+                    yy[l, n] = jj_start + k + eps
+                    break  # ms2.f: goto45 - stop at first match
+
+        # ---------------------------------------------------------------
+        # Corner points A,B,C,D,E,F via line intersections
+        # (ms2.f lines 650-714)
+        # ---------------------------------------------------------------
+        self.log("\nComputing corner points via line intersections...")
+
+        for n in range(nm):
+            # A: intersection of (b,a) and (k,m)   ms2.f lines 650-661
+            xx[10, n], yy[10, n] = self.intersect_lines(
+                xx[1, n], yy[1, n], xx[0, n], yy[0, n],
+                xx[6, n], yy[6, n], xx[8, n], yy[8, n])
+
+            # B = b   (line 666-667)
+            xx[11, n] = xx[1, n]
+            yy[11, n] = yy[1, n]
+
+            # C: intersection of (b,c) and (l,n)   lines 669-679
+            xx[12, n], yy[12, n] = self.intersect_lines(
+                xx[1, n], yy[1, n], xx[2, n], yy[2, n],
+                xx[7, n], yy[7, n], xx[9, n], yy[9, n])
+
+            # D: intersection of (e,d) and (m,k)   lines 685-695
+            xx[13, n], yy[13, n] = self.intersect_lines(
+                xx[4, n], yy[4, n], xx[3, n], yy[3, n],
+                xx[8, n], yy[8, n], xx[6, n], yy[6, n])
+
+            # E = e   (line 697-698)
             xx[14, n] = xx[4, n]
             yy[14, n] = yy[4, n]
 
-            # Point F: intersection of lines (e,f) and (l,n)
-            x1, y1 = xx[4, n], yy[4, n]  # e
-            x2, y2 = xx[5, n], yy[5, n]  # f
-            x3, y3 = xx[9, n], yy[9, n]  # n
-            x4, y4 = xx[7, n], yy[7, n]  # l
-            xx[15, n], yy[15, n] = self.intersect_lines(x1, y1, x2, y2,
-                                                        x3, y3, x4, y4)
+            # F: intersection of (e,f) and (n,l)   lines 700-710
+            xx[15, n], yy[15, n] = self.intersect_lines(
+                xx[4, n], yy[4, n], xx[5, n], yy[5, n],
+                xx[9, n], yy[9, n], xx[7, n], yy[7, n])
 
-        # Log results
         self.log("\nGeometry detection complete")
         self.log(f"Reference points for channel 1:")
         for nl in range(16):
             self.log(f"  Point {nl}: X={xx[nl,0]:.2f}, Y={yy[nl,0]:.2f}")
 
-        # Generate plots
-        self.plot_geo1(zc, zgc_norm, grt, i1, i2, ja, xx, yy)
+        # Diagnostic plots (ms2.f lines 742-745)
+        self.plot_geo1(zc_norm_full, zgc_norm_full, grt, i1, i2, ja, xx, yy)
         self.plot_geo2(xx, yy, xdel)
         self.plot_geo3(xx, yy)
 
         return xx, yy
 
-    def parabolic_max(self, z, i):
+    def smax(self, z, i):
         """
-        Compute sub-pixel position of maximum using parabolic interpolation.
-        
-        Fits a parabola through points (i-1, i, i+1) and finds maximum.
-        
+        Port of ms2.f `SMAX` (lines 386-408): parabolic interpolation
+        of an intensity-gradient maximum.
+
+        NOTE: unlike a typical "safe" sub-pixel estimator, the Fortran
+        does not clamp eps to [-0.5, 0.5] - it can legitimately return
+        a value outside that range if the local samples are noisy. This
+        port preserves that (no clamping), for fidelity.
+
         Parameters:
         -----------
         z : array
-            Signal array
+            Signal array (already normalized), 0-based.
         i : int
-            Index of approximate maximum
-        
+            0-based index of the approximate maximum.
+
         Returns:
         --------
-        float : Sub-pixel offset from i (range: -0.5 to +0.5)
+        float : sub-pixel offset from i.
         """
         if i <= 0 or i >= len(z) - 1:
+            # Defensive guard not present in the Fortran (which relies
+            # on the caller never passing a boundary index); ms2.f
+            # would otherwise index z(i-1)/z(i+1) out of the array here.
             return 0.5
 
-        # Parabolic fit: z = a*x^2 + b*x + c
-        # Maximum at x = -b/(2*a)
+        b = z[i + 1] - z[i - 1]
+        a = z[i + 1] + z[i - 1] - 2.0 * z[i]
 
-        b = z[i+1] - z[i-1]
-        a = z[i+1] + z[i-1] - 2*z[i]
+        if a == 0.0:
+            return 0.5  # ms2.f: "if(a.eq.0.)return" - keeps eps=0.5
 
-        if abs(a) < 1e-10:
-            return 0.5
-
-        eps = -b / (2.0 * a)
-
-        # Limit to reasonable range
-        eps = max(-0.5, min(0.5, eps))
-
-        return eps
+        return -b / (2.0 * a)
 
     def intersect_lines(self, x1, y1, x2, y2, x3, y3, x4, y4):
         """
-        Compute intersection of two lines.
-        
-        Line 1: passes through (x1,y1) and (x2,y2)
-        Line 2: passes through (x3,y3) and (x4,y4)
-        
+        Port of ms2.f `intersec` (lines 750-778).
+
+        Line 1 (nearly horizontal, e.g. b-a): x = a*y + b, through
+        (x1,y1) and (x2,y2).
+        Line 2 (nearly vertical, e.g. k-m):    y = c*x + d, through
+        (x3,y3) and (x4,y4).
+
+        See the module docstring (fidelity note 3) about the Fortran's
+        `1.-ac` denominator - this implementation uses the
+        mathematically-intended `1 - a*c`, not the literal (buggy) `ac`.
+
         Returns:
         --------
         tuple : (xres, yres) intersection point
         """
-        # Line 1: x = a*y + b (nearly horizontal)
-        # Line 2: y = c*x + d (nearly vertical)
-
         if abs(y2 - y1) < 1e-10 or abs(x3 - x4) < 1e-10:
-            # Degenerate case
+            # Degenerate case (not handled explicitly in ms2.f, which
+            # would divide by ~0 here; guarded defensively).
             return (x1 + x2) / 2, (y1 + y2) / 2
 
         a = (x2 - x1) / (y2 - y1)
@@ -491,7 +544,6 @@ class GeometryProcessor:
         denom = 1.0 - a * c
 
         if abs(denom) < 1e-10:
-            # Lines nearly parallel
             return (x1 + x2) / 2, (y1 + y2) / 2
 
         xres = (a * d + b) / denom
@@ -514,8 +566,11 @@ class GeometryProcessor:
 
     def plot_geo1(self, zc, zgc, grt, i1, i2, ja, xx, yy):
         """
-        Generate geo1.ps diagnostic plot.
-        
+        Generate geo1.ps diagnostic plot (ms2.f `plotgeo1`).
+
+        zc, zgc are now expected to be the FULL im-length normalized
+        arrays (matching what ms2.f actually passes - see newgeom).
+
         Shows:
         - Top: Intensity profile along central cut
         - Middle: Gradient profile with threshold
@@ -555,7 +610,7 @@ class GeometryProcessor:
                              yy[15, n], yy[14, n], yy[13, n], yy[10, n]]
                 axes[2].plot(x_outline, y_outline, 'b-', linewidth=1)
 
-            # Draw horizontal cut lines
+            # Draw horizontal cut lines (ja is Fortran 1-based -> -1)
             for j_cut in ja:
                 axes[2].axhline(j_cut-1, color='r', linestyle='--', alpha=0.5)
 
@@ -696,9 +751,10 @@ def main():
     print("="*60)
 
     # Create processor and run
-    processor = GeometryProcessor('Literal translation/ms.yml')
-    results = processor.compute_geometry('Literal translation/m010_b0101_ms_20170330_09564585_x1.fit',
-                                         "Literal translation/m011_b0101_ms_20170330_10013140_y1.fit")
+    processor = GeometryProcessor('ms.yml')
+    results = processor.compute_geometry(
+            'dark_2015.fits',
+            'flat_2015.fits')
     print("\n" + "="*60)
     print("GEOMETRY PROCESSING COMPLETE")
 

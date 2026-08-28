@@ -85,14 +85,28 @@ class MSDPProcessor:
     def read_fits_file(self, filename, swap_bytes=True):
         """
         Read FITS file and optionally swap bytes for LINUX compatibility.
-        
+
+        Ported from ms1.f `readfits` (lines 404-504) + `swap` (lines
+        521-541): for every int*2 sample, `swap` reverses its two raw
+        bytes (a VAX/Sun <-> Linux endianness fix from the era the
+        Fortran was written). ms1.f hardcodes `iswap=1` (line 121) -
+        it does NOT come from ms.par - so in the Fortran this byte
+        swap is always applied, unconditionally. This port keeps
+        `swap_bytes` as a parameter (driven by `self.params['iswap']`
+        in `process_sequence`) rather than hardcoding it, since a
+        FITS file read via astropy is normally already delivered in
+        native byte order - blindly reproducing the Fortran's swap
+        here would corrupt already-correct data. Enable it only if
+        your source files are known to need it (e.g. raw byte-for-byte
+        ports of the original VAX files).
+
         Parameters:
         -----------
         filename : str
             Path to FITS file
         swap_bytes : bool
-            Whether to perform byte swapping (default: True)
-        
+            Whether to perform the ms1.f-style byte swap (default: True)
+
         Returns:
         --------
         tuple : (header, data array)
@@ -107,6 +121,11 @@ class MSDPProcessor:
             # Ensure data is int16 type
             if data.dtype != np.int16:
                 data = data.astype(np.int16)
+
+            if swap_bytes:
+                # Reverses the two bytes of every 16-bit sample, exactly
+                # matching subroutine `swap` in ms1.f.
+                data = data.byteswap()
 
         return header, data
 
@@ -221,21 +240,34 @@ class MSDPProcessor:
     def _generate_output_name(self, input_file, file_type):
         """
         Generate output filename from input filename.
-        
+
+        Faithful port of ms1.f lines 171-181:
+            xname(1:1)  = file(nxy,nf)(33:33)
+            xname(2:17) = file(nxy,nf)(17:32)
+        (identical logic for yname). `xname`/`yname` are pre-initialized
+        to 'x000000_00000000_00000' / 'y000000_00000000_00000' (22
+        characters, line 65-66); only characters 1-17 are overwritten
+        from the source filename - characters 18-22 keep the literal
+        '00000' from that initial value.
+
+        `file` is declared `character*38` in the Fortran (line 3), so
+        the source filename is treated as a fixed-width, space-padded
+        38-column string; column 33 is expected to hold the 'x'/'y'
+        file-type letter from the original name (e.g. '...x1.fit'),
+        and columns 17-32 the 16-character date/time stamp.
+
         Format: x170330_00000000_00000 or y170330_00000000_00000
         """
-        # Extract date/time portion from input filename
-        # Expected format: m*x1.fit or m*y1.fit
-        basename = Path(input_file).stem
+        basename = Path(input_file).name
+        # character*38 file: pad/truncate to exactly 38 columns
+        fname38 = basename.ljust(38)[:38]
 
-        # Simple approach: create name from file_type and extract middle portion
-        # This mimics the Fortran string manipulation
-        if len(basename) >= 15:
-            middle_part = basename[-15:]  # Last 15 characters
-        else:
-            middle_part = "000000_00000000_00000"
+        # 1-based Fortran columns -> 0-based Python indices
+        char1 = fname38[32]          # column 33
+        chars2_17 = fname38[16:32]   # columns 17-32 (16 characters)
+        tail = "00000"               # columns 18-22, from the initial value
 
-        output_name = f"{file_type}{middle_part}"
+        output_name = char1 + chars2_17 + tail
 
         return output_name
 
@@ -376,7 +408,7 @@ def main():
     print("="*60)
 
     # Create processor and run
-    processor = MSDPProcessor('Literal translation/ms.yml')
+    processor = MSDPProcessor('ms.yml')
     results = processor.run()
 
     print("\n" + "="*60)
