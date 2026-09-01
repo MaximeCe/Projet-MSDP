@@ -1,3 +1,39 @@
 __pycache__/
 *.pyc
-.venv-eq/
+.venv/
+*.venv/
+
+# Données lourdes (non versionnées)
+data/input/*.fits
+data/input/*.fit
+data/input/lights/*.fits
+data/input/lights/*.fit
+data/input/master/*.fits
+data/output/geo*.pdf
+data/output/geo*.ps
+
+# Fichiers de sortie générés
+*.lis
+ACDF2.lis
+ms.lis
+xryr.lis
+xtab.lis
+ytab.lis
+channel.lis
+geo1.ps
+geo2.ps
+geo3.ps
+
+# Build Fortran
+*.o
+*.mod
+ms1
+ms2
+
+# Working dir (run.sh)
+data/work/
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
