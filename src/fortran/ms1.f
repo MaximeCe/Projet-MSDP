@@ -277,7 +277,7 @@ c        jsp=1536
 
       print *,' write files xname,yname '
       iut=30+nxy
-         print *, name(iut)
+c        print *, name(iut)
          call system('rm '//name(nxy))
        open(unit=iut,file=name(nxy),
      1      form='unformatted',status='new')

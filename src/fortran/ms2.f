@@ -187,7 +187,7 @@ c        nsm=21
       print *,' sip ',sip
         if(sip.ne.0)nsm=1
         ecmin=10000.
-        nsol=0
+        nsol=nsm-1  ! default: last threshold (was 0 -> ksi(0) OOB)
         ipl=0
         ecartbis=1000.
       print *,' ecartbis ',ecartbis
@@ -372,7 +372,7 @@ c============================================
  200  continue
 c                calcul de imaperm puis meanflatmd   (meanflat minus dark)
       do j=1,1024
-         do i=1,1546
+         do i=1,1536
             meanflat(i,j)=ima(j,i)
          enddo
       enddo
@@ -411,7 +411,7 @@ c      subroutine newgeom(z,i1,i2,zseuil,zgseuil) !,iedges)
       subroutine newgeom(meanflat)    !,xr,yr)
       integer*2 meanflat(1536,1024)
       dimension z(1536),zg(1536),zc(1536),zgc(1536),iedge(100,2),
-     1  sig(2),ja(3),xx(20,9),yy(20,9),distort(2,9)
+     1  sig(2),ja(3),xx(24,24),yy(24,24),distort(2,24)
 c     ,xr(24,3,2),yr(24,3,2)
 c---------------------------------------------------------------------      
 c (1) left and right edges for all channels in ordinates ja,jb 
@@ -537,7 +537,7 @@ c            if(z(i).lt.zseuil)goto10
         if(interp.eq.1)call smax(zg,i,eps)
  3      format(' edges: sig, l, n, iedge(n,is),zg(iedge-1/0/+1)',
      1     '  eps     XX      YY' )
- 4    format(6xf5.0,2i3,i6,5x,3f6.0,f6.2,2f8.2)
+ 4    format(6x,f5.0,2i3,i6,5x,3f6.0,f6.2,2f8.2)
       iedge(n,is)=i
       xx(l,n)=iedge(n,is)+eps-1.
       yy(l,n)=ja(nj)-1.
