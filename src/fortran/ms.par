@@ -28,7 +28,7 @@
     nfx1       1   first used dark current
     nfx2       1   last  used dark current    5
     nfy1       1   first used flat field      1
-    nfy2       2   last  used flat field     25 
+    nfy2       1   last  used flat field     25 
     nfb1       0   first used obs
     nfb2       0   last  used obs
 
@@ -82,7 +82,7 @@
                     -1 = dark current not abvailable
       si      15   intensity threshold for channel edges detection versus X 
                     0 = automatic detection for si,sgi,sj,sgj
- mingrad       8   minimum threshold of intensity gradient in newgeom
+ mingrad      15   minimum threshold of intensity gradient in newgeom
   interp       1   parabolic interpolation of intensity gradients
      sgi       8   intensity threshold for intensity gradients versus X
       sj      15   the same for intensity versus Y
