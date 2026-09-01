@@ -69,6 +69,24 @@ gfortran -c ms1.f -o ms1.o   # compile
 gfortran -c ms2.f -o ms2.o   # compile (sans PGPLOT, le lien échoue)
 ```
 
+## Géométrie & bugs corrigés
+
+### Bug `newgeom` : normalisation des coupes verticales (ms2.f)
+Les points verticaux k,m servant au calcul des coins A,D (extrapolation
+via `intersec`) échouaient pour les canaux 4-6, produisant des `0.00` / `********`
+dans `ACDF2.lis`.
+
+**Cause** : dans `newgeom` (SRECT), lors de la détection des bords verticaux
+(l=7..10, points k,l,m,n), les variables `zmax`/`zgmax` servant à normaliser le
+gradient vertical n'étaient **jamais recalculées** pour chaque coupe — les lignes
+`zmax=0.`, `zmax=amax1(...)`, `zgmax=0.`, `piv=abs(...)`, `zgmax=amax1(...)`
+étaient toutes commentées. La normalisation utilisait donc les valeurs globales
+de la coupe horizontale centrale (zmax≈2072, zgmax≈668), faussant le seuil applicatif
+de `mingrad` sur les colonnes à gradient faible.
+
+**Correction** : décommenté les 5 lignes (ms2.f §détection des points k,l,m,n)
+afin de recalculer `zmax`/`zgmax` **par coupe verticale** avant normalisation.
+
 ## Pipeline de traitement
 
 1. **ms1.py / ms1.f** — Moyennage darks + flats

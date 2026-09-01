@@ -612,15 +612,15 @@ c     points k
             endif
 c                                            z,zg            
       do jj=jj1,jj2
-c               zmax=0.
+               zmax=0.
                z(jj)=meanflat(ii,jj)
-c               zmax=amax1(zmax,z(jj))
+               zmax=amax1(zmax,z(jj))
       enddo
-c         zgmax=0.
+         zgmax=0.
       do jj=jj1,jj2-1
          zg(jj)=(z(jj+1)-z(jj))*sig(is)   !   sign
-c         piv=abs(zg(jj))
-c         zgmax=amax1(zgmax,zg(jj))
+         piv=abs(zg(jj))
+         zgmax=amax1(zgmax,zg(jj))
       enddo
       zg(jj2)=zg(jj2-1)
       print *,' l,n,zmax,zgmax ',l,n,zmax,zgmax
