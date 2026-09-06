@@ -103,7 +103,7 @@ def prepare_pipeline_links(input_dir: Path):
 # ---------------------------------------------------------------------------
 # Boucle de correction ja/mingrad
 # ---------------------------------------------------------------------------
-def correction_boucle(wkdir: Path, params, max_tries=6):
+def correction_boucle(wkdir: Path, params, max_tries=15):
     """Teste plusieurs jeux de params (ja, mingrad) et garde le meilleur.
 
     Pour chaque candidat : écrit ms.par.auto + ms.yml.auto, lance run_both,
@@ -113,16 +113,20 @@ def correction_boucle(wkdir: Path, params, max_tries=6):
     best_score = None
     # variations de ja autour de l'estimation, puis de mingrad
     base_ja = params.ja
-    candidates = [params]  # le premier = l'estimation initiale
+    candidates = [params]  # le premier = l'estimation initiale (dérivée)
     ja_step = max(2, int(params.jm * 0.03))
-    for d in (-ja_step, ja_step, -2 * ja_step, 2 * ja_step):
-        p = auto_params.Params(params.im, params.jm, params.nm,
-                               [max(2, base_ja[0] + d),
-                                base_ja[1],
-                                max(2, base_ja[2] - d)],
-                               params.interc, params.mingrad,
-                               params.xdel, params.jtriple)
-        candidates.append(p)
+    # ⚠️ 2026-09-06 : la grille faisait varier uniquement ja1/ja3 (anti-corrélés)
+    # et JAISSAT ja2 figé — elle ne pouvait jamais atteindre une config valide
+    # où ce sont ja2/ja3 qui comptent (ex. Meudon [100,501,851]). On couvre
+    # maintenant les 3 coupes de façon indépendante : chaque coupe ±1 et ±2 pas.
+    for j_i in range(3):
+        for d in (-2 * ja_step, -ja_step, ja_step, 2 * ja_step):
+            ja = list(base_ja)
+            ja[j_i] = max(2, min(params.jm - 2, ja[j_i] + d))
+            p = auto_params.Params(params.im, params.jm, params.nm,
+                                   ja, params.interc, params.mingrad,
+                                   params.xdel, params.jtriple)
+            candidates.append(p)
     mg_alt = params.mingrad - 6 if params.mingrad > 6 else params.mingrad
     if mg_alt != params.mingrad:
         p = auto_params.Params(params.im, params.jm, params.nm, params.ja,
@@ -167,18 +171,23 @@ def run_pipeline_with(wkdir: Path, cand):
     rc_p, out_p = run_cmd([str(PROJECT_DIR / "run_pipeline_py.sh"), str(ms_yml)],
                           cwd=str(PROJECT_DIR))
 
-    # find ACDF2 produits (les 2 plus récents)
-    runs = sorted(DATA_OUTPUT.glob("ACDF2_run_*.lis"),
-                  key=lambda p: p.stat().st_mtime, reverse=True)
+    # find ACDF2 produits — numérotation désormais INDÉPENDANTE (2026-09-06) :
+    # Fortran = ACDF2_run_*.lis (sans _py_) ; Python = ACDF2_run_py_*.lis.
+    # (Avant on prenait les 2 plus récents par mtime, ce qui présupposait une
+    # numérotation partagée — désormais on repère par NOM de préfixe.)
+    def _latest(globpat):
+        hits = sorted(DATA_OUTPUT.glob(globpat), key=lambda p: p.stat().st_mtime,
+                      reverse=True)
+        return hits[0] if hits else None
+
+    fortran_ac = _latest("ACDF2_run_*.lis") if rc_f == 0 else None
+    python_ac = _latest("ACDF2_run_py_*.lis") if rc_p == 0 else None
     f_ok = p_ok = False
-    fortran_ac = python_ac = None
-    if len(runs) >= 2 and rc_f == 0:
-        fortran_ac = runs[1]  # avant-dernier (lancé en premier)
+    if fortran_ac is not None:
         rf, _ = run_cmd(["python3", str(PROJECT_DIR / "check_fortran_pipeline.py"),
                          str(fortran_ac), str(ms_par)])
         f_ok = (rf == 0)
-    if len(runs) >= 2 and rc_p == 0:
-        python_ac = runs[0]  # plus récent (lancé en second)
+    if python_ac is not None:
         rp, _ = run_cmd(["python3", str(PROJECT_DIR / "check_python_pipeline.py"),
                          str(python_ac), str(ms_yml)])
         p_ok = (rp == 0)

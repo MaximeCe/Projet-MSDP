@@ -85,20 +85,25 @@ if [ ! -s ACDF2.lis ]; then echo "ERREUR: ms2.py n'a pas produit ACDF2.lis"; exi
 echo "  Pipeline Python terminé."
 echo ""
 
-# --- 6. Sorties versionnées (cohérentes avec le pipeline Fortran) ---
+# --- 6. Sorties versionnées (numérotation PYTHON INDÉPENDANTE du Fortran) ---
 mkdir -p "${DATA_OUTPUT}"
 
-get_next_run() {
+# 2026-09-06 : le compteur Python est désormais INDÉPENDANT de celui du Fortran.
+# Avant, les deux pipelines partageaient le même compteur (ms_run_*.lis), ce qui
+# faisait que Python comptait de 2 en 2 (toujours les numéros pairs après le
+# Fortran). Désormais le Python utilise son propre préfixe 'ms_run_py_NNN' /
+# 'ACDF2_run_py_NNN'. On peut ainsi compter chaque pipeline de 1,2,3… à part.
+get_next_run_py() {
     local i=1 max=0 n
-    for f in "${DATA_OUTPUT}"/ms_run_*.lis; do
+    for f in "${DATA_OUTPUT}"/ms_run_py_*.lis; do
         [ -e "$f" ] || continue
-        n="${f##*_run_}"; n="${n%.lis}"
+        n="${f##*_py_}"; n="${n%.lis}"
         n=$((10#$n))
         if [ "$n" -gt "$max" ]; then max="$n"; fi
     done
-    printf '%03d' $((max + 1))
+    printf '%02d' $((max + 1))
 }
-RUN_NUM="${RUN_NUM:-$(get_next_run)}"
+RUN_NUM="$(get_next_run_py)"
 
 # Plots PDF versionnés (le pipeline Fortran utilise geo{1,2,3}_fortran_N; ici geo{1,2,3}_python_N)
 for g in geo1 geo2 geo3; do
@@ -108,11 +113,11 @@ for g in geo1 geo2 geo3; do
     fi
 done
 
-# Logs versionnés
-cp "${WORK_DIR}/ms.lis"     "${DATA_OUTPUT}/ms_run_${RUN_NUM}.lis"     2>/dev/null || true
-cp "${WORK_DIR}/ACDF2.lis"  "${DATA_OUTPUT}/ACDF2_run_${RUN_NUM}.lis"  2>/dev/null || true
-cp "${WORK_DIR}/ms.yml"     "${DATA_OUTPUT}/ms_par_run_${RUN_NUM}.yml" 2>/dev/null || true
-echo "  ⚙  Logs versionnés: ms_run_${RUN_NUM}.lis / ACDF2_run_${RUN_NUM}.lis / ms_par_run_${RUN_NUM}.yml"
+# Logs versionnés (préfixe _py_ pour la numérotation Python indépendante)
+cp "${WORK_DIR}/ms.lis"     "${DATA_OUTPUT}/ms_run_py_${RUN_NUM}.lis"     2>/dev/null || true
+cp "${WORK_DIR}/ACDF2.lis"  "${DATA_OUTPUT}/ACDF2_run_py_${RUN_NUM}.lis"  2>/dev/null || true
+cp "${WORK_DIR}/ms.yml"     "${DATA_OUTPUT}/ms_par_run_py_${RUN_NUM}.yml" 2>/dev/null || true
+echo "  ⚙  Logs versionnés: ms_run_py_${RUN_NUM}.lis / ACDF2_run_py_${RUN_NUM}.lis / ms_par_run_py_${RUN_NUM}.yml"
 
 # Copies "courantes" (dernière exécution)
 cp "${WORK_DIR}/ACDF2.lis" "${DATA_OUTPUT}/" 2>/dev/null || true

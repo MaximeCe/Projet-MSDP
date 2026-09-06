@@ -118,10 +118,15 @@ rm -rf /tmp/msdp_pdf_$$
 # verrouillant ms_run_N & ACDF2_run_N ensemble.
 get_next_run() {
     local i=1 max=0 n
+    # 2026-09-06 : NE compter QUE les runs Fortran. Le glob ms_run_*.lis matche
+    # aussi ms_run_py_*.lis (numérotation Python indépendante) — on les exclut.
     for f in "${DATA_OUTPUT}"/ms_run_*.lis; do
         [ -e "$f" ] || continue
+        case "$f" in
+            *_py_*) continue ;;   # run Python (numérotation séparée)
+        esac
         n="${f##*_run_}"; n="${n%.lis}"
-        n=$((10#$n))                       # 10# pour eviter la base octale (008)
+        n=$((10#$n))
         if [ "$n" -gt "$max" ]; then max="$n"; fi
     done
     printf '%03d' $((max + 1))

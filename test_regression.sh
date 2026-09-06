@@ -59,17 +59,18 @@ echo "[1/2] Exécution des pipelines (Fortran + Python)..."
 echo "      OK (voir /tmp/regression_run.log)"
 
 # --- Étape 2 : cueillir les ACDF2 produits ---
-# run_both_pipeline.sh lance Fortran (run_pipeline.sh) PUIS Python
-# (run_pipeline_py.sh). Donc les 2 runs les PLUS RÉCENTS créés sont, dans l'ordre,
-# Fortran (avant-dernier) puis Python (dernier). On NE se fie PAS à la parité des
-# numéros (désalignée par des runs manuels intercalés).
-mapfile -t runs < <(ls -1t "${DATA_OUTPUT}"/ACDF2_run_*.lis 2>/dev/null)
-if [ "${#runs[@]}" -lt 2 ]; then
-    echo "❌ Moins de 2 ACDF2_run_*.lis disponibles."
+# 2026-09-06 : numérotation INDÉPENDANTE Fortran (ACDF2_run_*.lis, sans _py_) /
+# Python (ACDF2_run_py_*.lis). On repère par PRÉFIXE DE NOM, plus le plus récent
+# de chaque. (Avant : les 2 plus récents par mtime, présupposant une numérotation
+# partagée — désormais obsolète.)
+mapfile -t cur_fortran < <(ls -1t "${DATA_OUTPUT}"/ACDF2_run_*.lis 2>/dev/null | grep -v '_py_')
+mapfile -t cur_python < <(ls -1t "${DATA_OUTPUT}"/ACDF2_run_py_*.lis 2>/dev/null)
+if [ "${#cur_fortran[@]}" -lt 1 ] || [ "${#cur_python[@]}" -lt 1 ]; then
+    echo "❌ Il faut au moins 1 ACDF2 Fortran et 1 ACDF2 Python."
     exit 1
 fi
-CUR_PYTHON="${runs[0]}"      # le plus récent = Python
-CUR_FORTRAN="${runs[1]}"     # avant-dernier = Fortran
+CUR_FORTRAN="${cur_fortran[0]}"   # le plus récent run Fortran
+CUR_PYTHON="${cur_python[0]}"     # le plus récent run Python
 
 if [ -z "${CUR_FORTRAN}" ] || [ -z "${CUR_PYTHON}" ]; then
     echo "❌ Impossible de déterminer les ACDF2 Fortran et Python (runs)."

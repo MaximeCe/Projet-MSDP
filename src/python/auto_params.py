@@ -94,13 +94,52 @@ def estimate_nm(flat, y_frac=(0.15, 0.85), n_lines=15, lissages=(21, 31, 41)):
     return nm, conf, ref_peaks
 
 
-def estimate_ja(flat, nm, y_frac=(0.15, 0.85)):
+def estimate_ja(flat, nm, y_frac=(0.15, 0.5, 0.85)):
     """3 coupes de détection, équiréparties sur la hauteur J du CCD.
     Fractions standard [0.15, 0.5, 0.85] de jm (proches des ja Meudon
     [151, 501, 851] pour jm=1024). Retourne [ja1, ja2, ja3] (1-based)."""
     ny = flat.shape[0]
     vals = [max(2, min(int(ny * f), ny - 2)) for f in (0.15, 0.5, 0.85)]
     return vals
+
+
+def estimate_ja_bords(flat, nm=None, margin=0.10):
+    """Positionne les 3 coupes ja à partir de la bande utile des canaux.
+
+    Méthode de l'utilisateur : on moyenne le flat le long de i pour obtenir un
+    profil 1D `profil(j) = mean_i(flat)`. L'entrée et la sortie de la zone des
+    canaux correspondent aux deux plus grands pics (signe opposé) de la dérivée
+    d(profil)/dj. On place :
+        ja1 = entrée + 10% de la bande
+        ja3 = sortie - 10% de la bande
+        ja2 = milieu de la bande
+
+    Garde-fou : si les pics ne sont pas assez nets (signal faible / bande trop
+    étroite), on retombe sur l'équirépartition ([0.15,0.5,0.85]·jm).
+    """
+    ny = flat.shape[0]
+    profile = flat.mean(axis=1)                       # (ny,)
+    deriv = np.gradient(profile)
+    smooth = np.convolve(deriv, np.ones(7) / 7, mode="same")
+
+    j_entry = int(np.argmax(smooth))                  # dérivée max (entrée)
+    j_exit = int(np.argmin(smooth))                   # dérivée min (sortie)
+    band_width = abs(j_exit - j_entry)
+    pr_range = float(np.max(profile) - np.min(profile))
+    edge = max(abs(smooth[j_entry]), abs(smooth[j_exit]))
+
+    # Garde-fou : bande trop étroite ou pic pas assez marqué par rapport à l'amplitude
+    if band_width < 0.10 * ny or pr_range <= 0 or edge < 0.02 * pr_range:
+        return estimate_ja(flat, nm)
+
+    lo, hi = min(j_entry, j_exit), max(j_entry, j_exit)
+    width = hi - lo
+    ja1 = int(lo + margin * width)
+    ja3 = int(hi - margin * width)
+    ja2 = (lo + hi) // 2
+    return [max(2, min(ny - 2, ja1)),
+            max(2, min(ny - 2, ja2)),
+            max(2, min(ny - 2, ja3))]
 
 
 def _edge_regularity(flat, ja, nm):
@@ -154,6 +193,94 @@ def estimate_interc(ref_peaks):
     # filtrer les outliers (écarts > 1.5x la médiane) et moyenne
     clean = sp[np.abs(sp - med) < 1.5 * med]
     return float(np.mean(clean)) if len(clean) else med
+
+
+# ---------------------------------------------------------------------------
+# Sélection de nm par cohérence (9 ou 18) + balayage de mingrad
+# ---------------------------------------------------------------------------
+def estimate_nm_best(flat, ja, candidates=(9, 18)):
+    """Choisit nm parmi les candidats (9, 18) selon la COHÉRENCE des bords.
+
+    On utilise le score de régularité d'edges (`_edge_regularity`) évalué aux
+    3 coupes ja : le bon nm est celui qui rend les bords aussi proches que
+    possible d'un motif ~nm régulier. Ce n'est PAS une formule d'espacement
+    (interc ≈ im/nm est ambigu à cause des faux pics internes) — c'est le
+    juge de cohérence réel, le même que le pipeline valide.
+    """
+    best, best_score = None, 10 ** 9
+    for nm in candidates:
+        s = sum(_edge_regularity(flat, j, nm) for j in ja) / len(ja)
+        if s < best_score:
+            best_score, best = s, nm
+    return best if best is not None else 9
+
+
+def _edge_regularity_mingrad(flat, ja, nm, mingrad):
+    """[OBSOLÈTE — à ne pas utiliser pour estimer mingrad]
+
+    Ce proxy a été abandonné : il normalise le gradient sur 0-100 et sélectionne
+    un seuil (~55) qui ne correspond PAS au mingrad réel de newgeom (le bon est
+    18). mingrad est un paramètre INTERNE du code Fortran (échelle de
+    normalisation propre à l'implémentation), non dérivable du flat seul. La
+    boucle de correction du pipeline est le vrai sélecteur.
+
+    Conserver pour référence/diagnostic uniquement.
+
+    Compte les bords longs (maxima locaux de |dI/di| > mingrad, échelle 0-100)
+    sur chaque coupe ja, et pénalise l'écart au nombre attendu (nm+1 frontières)
+    ainsi que l'irrégularité de leur espacement. Plus bas = mieux.
+    """
+    expected = nm + 1
+    total = 0.0
+    for jj in ja:
+        Y = int(max(0, min(flat.shape[0] - 1, jj - 1)))
+        cut = flat[Y, :]
+        grad = np.abs(np.gradient(cut))
+        gmax = float(grad.max())
+        if gmax <= 0:
+            total += 10 ** 9
+            continue
+        norm = 100.0 * grad / gmax
+        edges = [i for i in range(1, len(norm) - 1)
+                 if norm[i] >= norm[i - 1] and norm[i] > norm[i + 1]
+                 and norm[i] >= mingrad]
+        if len(edges) < 2:
+            total += 10 ** 9
+            continue
+        sp = np.diff(edges)
+        med = float(np.median(sp))
+        if med <= 0:
+            total += 10 ** 9
+            continue
+        n_penalty = abs(len(edges) - expected)
+        reg = float(np.std(sp) / med) if len(sp) > 1 else 0.0
+        total += n_penalty * 3.0 + reg
+    return total
+
+
+def estimate_mingrad(flat, ja, nm, lo=5, hi=95, step=5):
+    """[OBSOLÈTE — voir _edge_regularity_mingrad]
+
+    Abandonnée : le proxy de cohérence sur le flat produit un seuil (~55) qui
+    ne correspond pas au mingrad de newgeom (18). Ne pas utiliser pour
+    estimer mingrad ; garder mingrad=18 + boucle de correction du pipeline.
+    Conservée pour référence/diagnostic uniquement.
+
+    Sélectionne mingrad par balayage : le seuil qui rend la géométrie
+    cohérente (nb de bords ≈ nm+1, espacement régulier) au lieu d'une valeur
+    fixe. Retourne le mingrad optimal (int).
+
+    ⚠️ La grille doit monter JUSQU'À ~95 : la courbe de score décroît puis
+    remonte (un minimum local existe là où ~nm+1 bords émergent). Un balayage
+    trop étroit (ex. 5-40) ne voit que le côté descendant et retombe
+    faussement sur la borne haute.
+    """
+    best_mg, best_score = None, 10 ** 9
+    for mg in range(lo, hi + 1, step):
+        s = _edge_regularity_mingrad(flat, ja, nm, mg)
+        if s < best_score:
+            best_score, best_mg = s, mg
+    return best_mg if best_mg is not None else 18
 
 
 # ---------------------------------------------------------------------------
@@ -251,21 +378,34 @@ def estimate_params(flat_path, dark_path=None, mingrad=18):
     if im > MAX_DIM or jm > MAX_DIM:
         raise ValueError(f"Dimensions {im}x{jm} > MAX_DIM {MAX_DIM}")
 
+    # ja : détection de la bande utile par la dérivée du profil moyen (méthode
+    # utilisateur : entrée/sortie de la zone canaux, +10%/−10%, milieu),
+    # avec garde-fou vers l'équirépartition si les pics ne sont pas nets.
+    ja = estimate_ja_bords(flat)
+
+    # nm : vote du prototype (diagnostic) PUIS sélection finale par cohérence
+    # parmi {9, 18} — le cas où les bords sont les plus réguliers gagne.
     nm, conf, ref_peaks = estimate_nm(flat)
-    # ja : équirépartition prudente. La POSITION EXACTE des coupes est sensible
-    # à l'instrument et ne peut être affinée que par la boucle de correction
-    # (run du pipeline + validation ACDF2) — une heuristique locale sur le flat
-    # ne suffit pas (constat A-auto). Voir docs/specification-multi-instrument.md.
-    ja = estimate_ja(flat, nm)
+    nm_sel = estimate_nm_best(flat, ja, candidates=(9, 18))
+
+    # mingrad : VALEUR PAR DÉFAUT (18). ⚠️ Estimation "proxy" abandonnée :
+    # _edge_regularity_mingrad normalisait le gradient sur 0-100 et produisait
+    # un seuil faux (~55) au lieu du 18 validé, car mingrad est un paramètre
+    # INTERNE de newgeom (échelle de normalisation propre à l'implémentation
+    # Fortran), non dérivable du flat seul. Le 18 est la valeur empirique
+    # validée ; la boucle de correction du pipeline est le vrai sélecteur.
+    mingrad_sel = mingrad
+
     interc = estimate_interc(ref_peaks)
 
     metadata = {
         "flat": str(flat_path),
         "dark": str(dark_path) if dark_path else None,
         "nm_conf_percent": round(conf, 1),
+        "nm_vote": nm, "nm_sel": nm_sel,
         "im": im, "jm": jm,
     }
-    return Params(im, jm, nm, ja, interc, mingrad=mingrad,
+    return Params(im, jm, nm_sel, ja, interc, mingrad=mingrad_sel,
                   metadata=metadata)
 
 
