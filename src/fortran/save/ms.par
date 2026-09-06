@@ -63,11 +63,6 @@
    nline       1   spectral line index                               
    ncam1       1   detector index
       nm       9   number of channels
-     ja1     151   position of 1st detection cut (j, 1-based)
-     ja2     501   position of 2nd detection cut (j, 1-based)
-     ja3     851   position of 3rd detection cut (j, 1-based)
-    xdel      25   lateral shift of k,l,m,n detection columns
- jtriple       1   1 = average 3 rows around each cut
     lbda    6563   line wavelength (Angst)
     dlbd     300   wavelength distance between channels (mA)   
   mupris    9000   translation between output channels (microns)

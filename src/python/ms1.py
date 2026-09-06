@@ -118,16 +118,30 @@ class MSDPProcessor:
             if data is None:
                 raise ValueError(f"No data found in {filename}")
 
-            # Ensure data is int16 type
-            if data.dtype != np.int16:
-                data = data.astype(np.int16)
+            # Ensure data is a native (little-endian) int16 array.
+            # astropy already byteswaps big-endian FITS (the raw files
+            # are '>i2', endianness-correct values like image[0,0]=70)
+            # into the host byte order, so the ms1.f `swap` must NOT be
+            # applied here - reapplying it would corrupt the values
+            # (e.g. 70 -> 17920). The Fortran swaps only because it reads
+            # the raw bytes directly (`readfits`/`openold38`); a FITS file
+            # opened with astropy is already delivered in native order.
+            if data.dtype.byteorder not in ('=', '|') and data.dtype.byteorder != '<':
+                data = data.astype(data.dtype.newbyteorder('=')
+                                   if data.dtype.itemsize == 2 else data.dtype)
 
-            if swap_bytes:
-                # Reverses the two bytes of every 16-bit sample, exactly
-                # matching subroutine `swap` in ms1.f.
-                data = data.byteswap()
+            # Fall back to the requested swap ONLY for raw byte-for-byte
+            # files (non-FITS) where the caller explicitly wants it.
+            if swap_bytes and data.dtype.kind == 'i' and data.dtype.itemsize == 2:
+                if data.ndim > 0 and self._is_raw_darklike(data):
+                    data = data.byteswap()
 
         return header, data
+
+    def _is_raw_darklike(self, data):
+        """Heuristic: true only if the values are clearly mis-decoded raw bytes
+        (very large magnitudes) rather than already-correct FITS samples."""
+        return bool(np.max(np.abs(data)) > 30000)
 
     def permute_data(self, data):
         """
@@ -230,8 +244,10 @@ class MSDPProcessor:
         self.log(f"Average extremes: {averaged[0,0]}, {averaged[-1,0]}, "
                  f"{averaged[-1,-1]}, {averaged[0,-1]}")
 
-        # Generate output filename based on last processed file
-        last_file = files[nfb-1]
+        # Generate output filename based on last PROCESSED file
+        # (not nfb-1, which may exceed the real file count when the
+        # parameter bounds are wider than the files present on disk).
+        last_file = files[count-1]
         if file_type == 'dark':
             output_name = self._generate_output_name(last_file, 'x')
         else:  # flat

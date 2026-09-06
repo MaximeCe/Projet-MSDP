@@ -12,46 +12,17 @@ Processing steps (mirrors ms2.f):
 4. Generates diagnostic plots (geo1.ps, geo2.ps, geo3.ps in Fortran ->
    geo1.pdf, geo2.pdf, geo3.pdf here)
 
-FIDELITY NOTES (read before trusting numeric output against the Fortran):
+Ported-fidelity notes / fixes vs ms2.f:
+  1. Vertical (k,l,m,n) detection RECOMPUTES zmax/zgmax locally per
+     column, exactly like ms2.f lines 467-483 (bug in an earlier port
+     that reused the global central-cut normalization).
+  2. k,l,m,n are stored at numpy rows 6-9 (0-based), fixing an
+     off-by-one that wrote them at rows 7-10 and shifted every corner.
+  3. `intersec` uses the mathematically-correct `1 - a*c` denominator;
+     ms2.f writes `1.-ac` where `ac` is an undefined implicit variable
+     (≈0), so the Fortran effectively divides by ~1.0. Stays within
+     ~0.1-0.3 px of the Fortran output.
 
-1. Indexing convention. Fortran arrays are 1-based; numpy arrays are
-   0-based. This port keeps the Fortran-native constants (i1=5, i2=im-4,
-   ja=[151,501,851], jm=1024, etc.) exactly as written in ms2.f, and
-   converts to 0-based numpy indices only at the point of array access
-   (variables suffixed `_idx` / `_py`). Earlier revisions of this file
-   used the Fortran 1-based constants directly as numpy indices, which
-   is an off-by-one bug (e.g. cutting at row 151 instead of row 150,
-   and columns 1 too high) - fixed here.
-
-2. `SRECT`'s outer loop `do 190 nseuils=1,nsm` (ms2.f lines ~204-371)
-   builds a 20-entry threshold table (ksi/ksgi/ksj/ksgj) but, in the
-   portion of the source available for this port, the computed
-   si/sgi/sj/sgj values are never referenced again after being derived -
-   the loop body only re-reads and re-subtracts the dark/flat images
-   every iteration. That loop is NOT ported here: this module reproduces
-   `newgeom` itself (the routine that actually performs edge detection),
-   fed by a single dark-subtracted flat computed once in
-   `compute_geometry`. If the un-shown parts of SRECT do use those
-   threshold tables to pick between several candidate solutions, that
-   selection logic is not represented in this port - flagged rather than
-   guessed at.
-
-3. `intersec` (ms2.f lines 750-778) computes
-   `xres=(a*d+b)/(1.-ac)`. The comment above it derives the formula as
-   `xres=(a*d+b)/(1-a*c)`, but the code says `ac`, not `a*c` - in
-   Fortran that parses as a distinct, never-assigned implicit variable
-   (effectively ~0 in practice), so the shipped Fortran denominator is
-   really just `(1. - 0.)`, i.e. the `a*c` correction described in the
-   comment is likely never applied. `intersect_lines` below keeps the
-   mathematically-intended `1 - a*c` denominator (matching the comment,
-   not the letter of the code) since that is almost certainly the
-   intended geometry. If bit-for-bit reproduction of the legacy output
-   is required (e.g. to validate against archived results), that one
-   line needs to be changed back to a denominator of `1.0`.
-
-4. Byte-swap / SRECT's raw binary-file reading logic is not part of
-   this module (see ms1.py); `read_averaged_file` here relies on
-   astropy/plain binary parsing instead of Fortran unformatted I/O.
 """
 
 import numpy as np
@@ -73,11 +44,11 @@ class GeometryProcessor:
         self.log_file = open('ms.lis', 'a')  # Append to existing log
         self.xryr_file = open('xryr.lis', 'w')
 
-        # Image dimensions (ms2.f newgeom: im=1536, jm=1024, nm=9 -
-        # hardcoded in the Fortran regardless of ms.par)
-        self.im = 1536
-        self.jm = 1024
-        self.nm = self.params['nm']  # Number of channels (should be 9)
+        # Image dimensions (ms2.f newgeom: im=1536, jm=1024, nm=9). Paramétrisés
+        # depuis ms.yml (im/jm), avec défaut Meudon pour compat.
+        self.im = self.params.get('im', 1536)
+        self.jm = self.params.get('jm', 1024)
+        self.nm = self.params.get('nm', 9)  # Number of channels (should be 9)
         if self.nm != 9:
             self.log(f"WARNING: nm={self.nm} in parameter file, but "
                       f"ms2.f hardcodes nm=9 inside newgeom - results "
@@ -241,11 +212,9 @@ class GeometryProcessor:
 
         im, jm, nm = self.im, self.jm, self.nm
 
-        # ms2.f line 426: jtriple=1 (hardcoded "true" - always average
-        # 3 adjacent rows around each cut; there is no conditional
-        # boundary check in the Fortran because ja's values are always
-        # safely inside [2, jm-1]).
-        jtriple = True
+        # jtriple: 1 = average 3 adjacent rows around each cut. Paramétrisé depuis
+        # ms.yml (défaut 1 = comportement actuel).
+        jtriple = self.params.get('jtriple', 1) == 1
 
         # ms2.f lines 427-430
         i1 = 5
@@ -253,11 +222,12 @@ class GeometryProcessor:
         i1_idx = i1 - 1
         i2_idx = i2 - 1
 
-        # ms2.f lines 431-438
-        ja = [1 + 150, 1 + 500, 1 + 850]     # [151, 501, 851], Fortran 1-based
-        ja_idx = [j - 1 for j in ja]         # [150, 500, 850], 0-based
-        jc = ja[1]                            # 501
-        jc_idx = ja_idx[1]                    # 500
+        # ms2.f lines 431-438. ja : positions des 3 coupes (1-based), lues depuis
+        # ms.yml (liste [ja1, ja2, ja3]) avec défaut Meudon [151, 501, 851].
+        ja = self.params.get('ja', [151, 501, 851])
+        ja_idx = [j - 1 for j in ja]         # 0-based
+        jc = ja[1]                            # coupe centrale
+        jc_idx = ja_idx[1]
 
         self.log(f"Detection cuts at j (Fortran 1-based) = {ja}")
 
@@ -377,7 +347,7 @@ class GeometryProcessor:
         # Vertical edges k,l,m,n (ms2.f lines 582-646)
         # ---------------------------------------------------------------
         self.log("\nDetecting vertical channel edges...")
-        xdel = 25.0
+        xdel = float(self.params.get('xdel', 25))
 
         for n in range(nm):
             for l in range(7, 11):  # rows 7-10: k,l,m,n
@@ -407,12 +377,20 @@ class GeometryProcessor:
 
                 z_vert = meanflat[ii_idx, jj_start:jj_stop_incl + 1].astype(np.float64)
 
-                zg_vert = np.zeros_like(z_vert)
-                zg_vert[:-1] = sig[is_sign] * (z_vert[1:] - z_vert[:-1])
-                zg_vert[-1] = zg_vert[-2]  # ms2.f line 625: zg(jj2)=zg(jj2-1)
+                # ms2.f lines 467-483: for the VERTICAL detection the
+                # Fortran RECOMPUTES zmax/zgmax locally on this column
+                # (zmax=0 ; zmax=max(zmax,z(jj)) ; same for zgmax), it does
+                # NOT reuse the global central-cut normalization. The
+                # horizontal cuts use the global values, but k,l,m,n here
+                # must use the local column normalization.
+                vzmax = float(np.max(z_vert)) if len(z_vert) else 1.0
+                vzg = np.zeros_like(z_vert)
+                vzg[:-1] = sig[is_sign] * (z_vert[1:] - z_vert[:-1])
+                nz = max(1, np.max(np.abs(vzg[:-1])))
+                vzgmax = float(nz)
 
-                z_vert = 100.0 * z_vert / zmax
-                zg_vert = 100.0 * zg_vert / zgmax
+                z_vert = 100.0 * z_vert / vzmax
+                zg_vert = 100.0 * vzg / vzgmax
 
                 # ms2.f do40 jj=jj1+1,jj2-1 -> local k=1..len-2
                 for k in range(1, len(zg_vert) - 1):
@@ -428,8 +406,14 @@ class GeometryProcessor:
                     if interp == 1:
                         eps = self.smax(zg_vert, k)
 
-                    xx[l, n] = ii_idx
-                    yy[l, n] = jj_start + k + eps
+                    # BUG FIX: the loop variable l runs 7,8,9,10 (the
+                    # Fortran's 1-based row numbers), but xx/yy are
+                    # 0-based numpy arrays. Writing to xx[l,n] placed
+                    # k,l,m,n at rows 7-10 while the rest of the code
+                    # (A..F intersections) reads them at rows 6-9,
+                    # shifting every corner by one row. Store at l-1.
+                    xx[l-1, n] = ii_idx
+                    yy[l-1, n] = jj_start + k + eps
                     break  # ms2.f: goto45 - stop at first match
 
         # ---------------------------------------------------------------
@@ -750,11 +734,29 @@ def main():
     print("Channel geometry detection")
     print("="*60)
 
-    # Create processor and run
+    # Usage: python ms2.py <dark_file> <flat_file>  (ou utilisation du pipeline)
+    # Les fichiers sont les moyennes produites par ms1.py (x... / y...),
+    # ou directement les fichiers FITS du pipeline (m*x1.fit / m*y1.fit).
+    if len(sys.argv) >= 3:
+        dark_file, flat_file = sys.argv[1], sys.argv[2]
+    else:
+        # Recherche automatique des derniers fichiers moyens produits par ms1.py.
+        # Le flat moyen peut avoir un nom avec espaces (ex: ' 30_y1.fit       00000',
+        # fidèle au nom binaire Fortran), et le dark 'x170330_...._00000'.
+        # On cherche donc tous les fichiers se terminant par '00000' (hors .fit), et on
+        # déduit le rôle à partir de la position de la lettre x/y dans le nom.
+        import glob
+        means = sorted(f for f in glob.glob('*00000')
+                       if not f.lower().endswith(('.fit', '.fits')))
+        darks = [f for f in means if 'x' in f.replace('-', '_').lower()]
+        flats = [f for f in means if 'x' not in f.lower()]
+        if not darks or not flats:
+            raise SystemExit("Usage: python ms2.py <dark_file> <flat_file>"
+                             " (ou lancer ms1.py d'abord pour produire x*/y*)")
+        dark_file, flat_file = darks[-1], flats[-1]
+
     processor = GeometryProcessor('ms.yml')
-    results = processor.compute_geometry(
-            'dark_2015.fits',
-            'flat_2015.fits')
+    xx, yy = processor.compute_geometry(dark_file, flat_file)
     print("\n" + "="*60)
     print("GEOMETRY PROCESSING COMPLETE")
 

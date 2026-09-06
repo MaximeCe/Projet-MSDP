@@ -22,9 +22,9 @@ ical: 0       # cal.ps
 
 # SELECTED OBSERVATIONS
 nfx1: 1       # First used dark current file
-nfx2: 1       # Last used dark current file
+nfx2: 1       # Last used dark current file (auto-clamped to real file count)
 nfy1: 1       # First used flat field file
-nfy2: 2       # Last used flat field file
+nfy2: 1       # Last used flat field file (auto-clamped to real file count)
 nfb1: 0       # First used observation file
 nfb2: 0       # Last used observation file
 
@@ -52,12 +52,17 @@ kold: 0       # Results with old geometry
 knew: 1       # Results with new geometry (both are possible successively)
 is: 1536      # CCD X-dimension (pixels)
 js: 1024      # CCD Y-dimension (pixels)
+im: 1536      # Geometry X-dimension (newgeom) — défaut Meudon
+jm: 1024      # Geometry Y-dimension (newgeom) — défaut Meudon
 li: 442000    # Field stop length (arcsec/1000)
 lj: 61000     # Field stop width (arcsec/1000)
 jypas: 45000  # Translation between images for correlations (arcsec/1000)
 nline: 1      # Spectral line index
 ncam1: 1      # Detector index
 nm: 9         # Number of channels
+ja: [151, 501, 851]   # Positions of the 3 detection cuts (j, 1-based)
+xdel: 25      # Lateral shift of k,l,m,n detection columns (pixels)
+jtriple: 1    # 1 = average 3 rows around each cut
 lbda: 6563    # Line wavelength (Angstrom)
 dlbd: 300     # Wavelength distance between channels (mA)
 mupris: 9000  # Translation between output channels (microns)
@@ -78,7 +83,8 @@ idc: 1        # Generally 1
 # CHANNEL EDGE DETECTION THRESHOLDS
 si: 15        # Intensity threshold for channel edges detection versus X
               # 0 = automatic detection for si, sgi, sj, sgj
-mingrad: 8    # Minimum threshold of intensity gradient in newgeom
+mingrad: 18    # Minimum threshold of intensity gradient in newgeom
+               # (aligné sur ms.par à 18 - ne pas descendre: 15 cree un faux pic)
 interp: 1     # Parabolic interpolation of intensity gradients
 sgi: 8        # Intensity threshold for intensity gradients versus X
 sj: 15        # Intensity threshold versus Y

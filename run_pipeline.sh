@@ -51,9 +51,31 @@ echo "  OK"
 # --- 3. Préparer les données ---
 echo "  Données..."
 cd "${WORK_DIR}"
-ln -sf "${PROJECT_DIR}/data/input/m010_b0101_ms_20170330_09564585_x1.fit" .
-ln -sf "${PROJECT_DIR}/data/input/m011_b0101_ms_20170330_10013140_y1.fit" .
+
+# Lier TOUS les darks (*x1.fit) et flats (*y1.fit) présents, triés par nom
+# (le Fortran fait `ls m*x1.fit` / `ls m*y1.fit`, donc l'ordre lexicographique compte)
+NKEEP=0
+NFKEEP=0
+for f in $(ls "${PROJECT_DIR}/data/input/"*x1.fit 2>/dev/null | sort); do
+    ln -sf "$f" .; NKEEP=$((NKEEP+1))
+done
+for f in $(ls "${PROJECT_DIR}/data/input/"*y1.fit 2>/dev/null | sort); do
+    ln -sf "$f" .; NFKEEP=$((NFKEEP+1))
+done
+echo "  → Darks liés: ${NKEEP}  Flats liés: ${NFKEEP}"
+
+# Ajuster nfy2/nfx2 dans ms.par au nombre réel de fichiers si >0
+if [ "${NFKEEP}" -ge 1 ]; then
+    sed -i "s/^    nfy2       1/    nfy2       ${NFKEEP}/" ms.par
+    sed -i "s/^    nfy1       1/    nfy1       1/" ms.par
+fi
+if [ "${NKEEP}" -ge 1 ]; then
+    sed -i "s/^    nfx2       1/    nfx2       ${NKEEP}/" ms.par
+    sed -i "s/^    nfx1       1/    nfx1       1/" ms.par
+fi
+
 ln -sf "${BUILD_DIR}/msdp" .
+echo "  ms.par: nfx2=${NKEEP} nfy2=${NFKEEP} (ajusté au nb de fichiers)"
 
 # --- 4. Exécuter ---
 echo "  Exécution..."
@@ -61,20 +83,55 @@ rm -f ms.lis xtab.lis ytab.lis channel.lis geo*.ps geo*.pdf ACDF2.lis xryr.lis *
 export PGPLOT_FONT="/tmp/msdp_fortran/pgplot5_extracted/usr/lib/pgplot5/grfont.dat"
 timeout 120 ./msdp 2>&1 | tail -15
 
-# --- 5. Convertir PS → PDF (en /tmp puis copie — gs ne peut pas écrire direct dans snap Nextcloud) ---
+# --- 5. Convertir PS → PDF versionné (en /tmp puis copie — gs ne peut pas écrire direct dans snap Nextcloud) ---
 echo ""
-echo "  Conversion PS → PDF..."
+echo "  Conversion PS → PDF (versionné)..."
+
+# Déterminer le prochain numéro de version libre
+get_next_version() {
+    local prefix="$1"
+    local i=1
+    while [ -f "${DATA_OUTPUT}/${prefix}_fortran_$(printf '%02d' ${i}).pdf" ]; do
+        i=$((i + 1))
+    done
+    printf '%02d' "${i}"
+}
+
 mkdir -p "${DATA_OUTPUT}" /tmp/msdp_pdf_$$
 for ps in geo1 geo2 geo3; do
     if [ -f "${WORK_DIR}/${ps}.ps" ] && [ -s "${WORK_DIR}/${ps}.ps" ]; then
+        # Le numéro de version doit être identique pour les 3 plots d'un même run
+        if [ -z "${VERSION_NUM:-}" ]; then
+            VERSION_NUM="$(get_next_version geo1)"
+            echo "  → Nouvelle version: _fortran_${VERSION_NUM}"
+        fi
         gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite \
            -sOutputFile="/tmp/msdp_pdf_$$/${ps}.pdf" \
            "${WORK_DIR}/${ps}.ps" 2>/dev/null
-        cp "/tmp/msdp_pdf_$$/${ps}.pdf" "${DATA_OUTPUT}/${ps}.pdf"
-        echo "  ✓ ${ps}.pdf"
+        cp "/tmp/msdp_pdf_$$/${ps}.pdf" "${DATA_OUTPUT}/${ps}_fortran_${VERSION_NUM}.pdf"
+        echo "  ✓ ${ps}_fortran_${VERSION_NUM}.pdf"
     fi
 done
 rm -rf /tmp/msdp_pdf_$$
+# --- Logs versionnés (trace des itérations) ---
+# Numéro de run : on repart du plus haut *_run_N consistant, puis on incrémente en
+# verrouillant ms_run_N & ACDF2_run_N ensemble.
+get_next_run() {
+    local i=1 max=0 n
+    for f in "${DATA_OUTPUT}"/ms_run_*.lis; do
+        [ -e "$f" ] || continue
+        n="${f##*_run_}"; n="${n%.lis}"
+        n=$((10#$n))                       # 10# pour eviter la base octale (008)
+        if [ "$n" -gt "$max" ]; then max="$n"; fi
+    done
+    printf '%03d' $((max + 1))
+}
+RUN_NUM="${RUN_NUM:-$(get_next_run)}"
+cp "${WORK_DIR}/ms.lis"     "${DATA_OUTPUT}/ms_run_${RUN_NUM}.lis"     2>/dev/null || true
+cp "${WORK_DIR}/ACDF2.lis"  "${DATA_OUTPUT}/ACDF2_run_${RUN_NUM}.lis"  2>/dev/null || true
+cp "${MS_PAR}"              "${DATA_OUTPUT}/ms_par_run_${RUN_NUM}.par" 2>/dev/null || true
+echo "  ⚙  Logs versionnés: ms_run_${RUN_NUM}.lis / ACDF2_run_${RUN_NUM}.lis / ms_par_run_${RUN_NUM}.par"
+
 cp "${WORK_DIR}/ACDF2.lis" "${DATA_OUTPUT}/" 2>/dev/null || true
 cp "${WORK_DIR}/ms.lis" "${DATA_OUTPUT}/" 2>/dev/null || true
 
