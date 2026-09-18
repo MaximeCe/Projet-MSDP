@@ -41,6 +41,9 @@ MAX_ABS = 2500.0         # valeur absolue maximale raisonnable
 # Tolérances de régularité
 CTR_X_TOL_FRAC = 0.25    # tolérance relative de l'écart-type des pas de centres X
 WIDTH_TOL_FRAC = 0.35    # tolérance relative de l'écart-type des largeurs de canal
+# ~7e critère — alignement des bords haut/bas sur des droites parallèles (2026-09-06)
+EDGE_Y_MAX_DEV = 3.0     # px max d'écart d'un point haut/bas à sa droite (saines: <1px)
+EDGE_Y_PAR_TOL = 0.10    # px/canal : |pente_hi - pente_lo| max (parallélisme)
 
 
 class Config:
@@ -100,6 +103,27 @@ def stddev(xs: list[float]) -> float:
         return 0.0
     m = sum(xs) / n
     return math.sqrt(sum((x - m) ** 2 for x in xs) / (n - 1))
+
+
+def _linreg_dev(points: list[tuple[float, float]]) -> tuple[float, float]:
+    """Régression linéaire Y = a·X + b sur des points (X,Y).
+
+    Retourne (pente a, déviation max |résidu| en px). Utilisé pour vérifier
+    que les bords haut/bas des canaux suivent une droite (critère 7).
+    """
+    if len(points) < 2:
+        return 0.0, 0.0
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    n = len(xs)
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    den = sum((x - mx) ** 2 for x in xs)
+    slope = num / den if den != 0 else 0.0
+    intercept = my - slope * mx
+    max_dev = max(abs(y - (slope * x + intercept)) for x, y in points)
+    return slope, max_dev
 
 
 def run_checks(path: Path, config: Config | None = None) -> tuple[bool, list[str]]:
@@ -210,6 +234,36 @@ def run_checks(path: Path, config: Config | None = None) -> tuple[bool, list[str
             else:
                 ok = False
                 add("❌ Largeur de canal moyenne non positive")
+
+    # -- 7. Alignement des bords haut/bas sur des droites parallèles -----
+    # (2026-09-06) Les bords supérieur (CY,FY) et inférieur (AY,DY) des canaux
+    # doivent chacun suivre une droite le long du champ, et ces deux droites
+    # doivent être quasi-parallèles. Un bord seul mal placé en Y est invisible
+    # des critères 1-6 (qui ne regardent que X) : ce critère le détecte.
+    if len(rows) >= 2:
+        n = len(rows)
+        # abscisse = centre X du canal (milieu de la largeur)
+        xs = [(r[0] + r[2]) / 2.0 for r in rows]   # (AX+DX)/2
+        # points haut : CY, FY ; points bas : AY, DY
+        hi = [(xs[i], cy) for i, r in enumerate(rows) for cy in (r[5], r[7])]
+        lo = [(xs[i], ay) for i, r in enumerate(rows) for ay in (r[4], r[6])]
+
+        slope_hi, max_dev_hi = _linreg_dev(hi)
+        slope_lo, max_dev_lo = _linreg_dev(lo)
+        par_dev = abs(slope_hi - slope_lo)
+
+        fail_dev = max(max_dev_hi, max_dev_lo) > EDGE_Y_MAX_DEV
+        fail_par = par_dev > EDGE_Y_PAR_TOL
+        if fail_dev or fail_par:
+            ok = False
+            if fail_dev:
+                add(f"❌ Bords haut/bas hors droite (dév. max {max(max_dev_hi, max_dev_lo):.2f} px "
+                    f"> tol {EDGE_Y_MAX_DEV} px)")
+            if fail_par:
+                add(f"❌ Droites haut/bas non parallèles (Δpente {par_dev:.3f} > tol {EDGE_Y_PAR_TOL})")
+        else:
+            add(f"✔  Bords haut/bas alignés (dév. max {max(max_dev_hi, max_dev_lo):.2f} px, "
+                f"Δpente {par_dev:.3f})")
 
     # -- Bilan ------------------------------------------------
     add("")

@@ -245,22 +245,35 @@ def download_sequence(date: str, num_seq: int, seq_info: dict,
     if limit:
         files = files[:limit]
 
-    # Construire les URLs et chemins
-    download_tasks = []
+    # Construire les URLs et chemins.
+    # ⚠️ 2026-09-07 : résoudre les URLs de téléchargement en PARALLÈLE.
+    # Avant, get_download_url(file_id) était appelé séquentiellement dans la
+    # boucle for — chaque requête prenant ~1-2 min sur BASS2000 (lent), pour
+    # ~85 fichiers ça prenait des heures avant le premier octet. On résout
+    # maintenant toutes les URLs avec un ThreadPoolExecutor (workers dédiés).
+    filepaths = []
     for f in files:
         ts = f["time"].replace(":", "")
         content_slug = re.sub(r'[^a-zA-Z0-9_-]', '', f["content"].replace(" ", "_"))
         name = f"{date}_{ts}_{content_slug}.fit"
-        filepath = dest / name
+        filepaths.append(dest / name)
 
+    def _resolve_one(f, fp):
         dl_url = None
         if f["file_id"]:
             dl_url = get_download_url(f["file_id"])
         elif f["url_path"] and f["filename"]:
             dl_url = f["url_path"].rstrip("/") + "/" + f["filename"]
+        return (dl_url, fp)
 
-        if dl_url:
-            download_tasks.append((dl_url, filepath))
+    download_tasks = []
+    resolve_workers = max(8, max_workers * 2)
+    with ThreadPoolExecutor(max_workers=resolve_workers) as rex:
+        futures = [rex.submit(_resolve_one, f, fp) for f, fp in zip(files, filepaths)]
+        for fut in as_completed(futures):
+            dl_url, fp = fut.result()
+            if dl_url:
+                download_tasks.append((dl_url, fp))
 
     # Téléchargement parallèle
     ok = 0
