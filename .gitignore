@@ -39,6 +39,7 @@ data/output/ms.yml.auto
 data/output/ingest*.csv
 data/output/ACDF2.*.ref
 data/output/ref_t0/
+data/output/ivprof*
 
 # Build Fortran
 *.o

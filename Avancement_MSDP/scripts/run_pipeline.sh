@@ -52,17 +52,21 @@ echo "  OK"
 echo "  Données..."
 cd "${WORK_DIR}"
 
-# Lier TOUS les darks (*x1.fit) et flats (*y1.fit) présents, triés par nom
-# (le Fortran fait `ls m*x1.fit` / `ls m*y1.fit`, donc l'ordre lexicographique compte)
+# Lier TOUS les darks (*x1.fit), flats (*y1.fit) et observations (*b1.fit) présents, triés par nom
+# (le Fortran fait `ls m*x1.fit` / `ls m*y1.fit` / `ls m*b1.fit`, donc l'ordre lexicographique compte)
 NKEEP=0
 NFKEEP=0
+NBKEEP=0
 for f in $(ls "${PROJECT_DIR}/data/input/"*x1.fit 2>/dev/null | sort); do
     ln -sf "$f" .; NKEEP=$((NKEEP+1))
 done
 for f in $(ls "${PROJECT_DIR}/data/input/"*y1.fit 2>/dev/null | sort); do
     ln -sf "$f" .; NFKEEP=$((NFKEEP+1))
 done
-echo "  → Darks liés: ${NKEEP}  Flats liés: ${NFKEEP}"
+for f in $(ls "${PROJECT_DIR}/data/input/"*b1.fit 2>/dev/null | sort); do
+    ln -sf "$f" .; NBKEEP=$((NBKEEP+1))
+done
+echo "  → Darks liés: ${NKEEP}  Flats liés: ${NFKEEP}  Obs liées: ${NBKEEP}"
 
 # Ajuster nfy2/nfx2 dans ms.par au nombre réel de fichiers si >0
 if [ "${NFKEEP}" -ge 1 ]; then
