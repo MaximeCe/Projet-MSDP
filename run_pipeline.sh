@@ -12,11 +12,11 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="/tmp/msdp_pipeline"
 WORK_DIR="${BUILD_DIR}/work"
-SRC_FORTRAN="${PROJECT_DIR}/src/fortran"
+SRC_FORTRAN="${PROJECT_DIR}/src/fortran/new"
 DATA_OUTPUT="${PROJECT_DIR}/data/output"
 
 # ms.par : argument ou défaut
-MS_PAR="${1:-${SRC_FORTRAN}/ms.par}"
+MS_PAR="${1:-${PROJECT_DIR}/src/fortran/ms.par}"
 
 if [ ! -f "${MS_PAR}" ]; then
     echo "ERREUR: ${MS_PAR} non trouvé"
@@ -31,7 +31,7 @@ echo "============================================"
 # --- 1. Préparer le répertoire ---
 rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}" "${BUILD_DIR}/lib"
-cp "${SRC_FORTRAN}/ms1.f" "${SRC_FORTRAN}/ms2.f" "${BUILD_DIR}/"
+cp "${SRC_FORTRAN}/ms1.f" "${SRC_FORTRAN}/ms2.f" "${SRC_FORTRAN}/ms3.f" "${SRC_FORTRAN}/ms4.f" "${BUILD_DIR}/"
 cp "${MS_PAR}" "${WORK_DIR}/ms.par"
 
 # Symlink pour -lX11
@@ -40,7 +40,7 @@ ln -sf /usr/lib/x86_64-linux-gnu/libX11.so.6 "${BUILD_DIR}/lib/libX11.so"
 # --- 2. Compiler ---
 echo "  Compilation..."
 cd "${BUILD_DIR}"
-gfortran -g -o msdp ms1.f ms2.f \
+gfortran -g -o msdp ms1.f ms2.f ms3.f ms4.f \
     -lpgplot -L/usr/lib/x86_64-linux-gnu -L"${BUILD_DIR}/lib" -lX11 \
     -lgfortran -lquadmath 2>&1 | grep -i error && {
     echo "ERREUR de compilation"
@@ -52,17 +52,21 @@ echo "  OK"
 echo "  Données..."
 cd "${WORK_DIR}"
 
-# Lier TOUS les darks (*x1.fit) et flats (*y1.fit) présents, triés par nom
-# (le Fortran fait `ls m*x1.fit` / `ls m*y1.fit`, donc l'ordre lexicographique compte)
+# Lier TOUS les darks (*x1.fit), flats (*y1.fit) et observations (*b1.fit) présents, triés par nom
+# (le Fortran fait `ls m*x1.fit` / `ls m*y1.fit` / `ls m*b1.fit`, donc l'ordre lexicographique compte)
 NKEEP=0
 NFKEEP=0
+NBKEEP=0
 for f in $(ls "${PROJECT_DIR}/data/input/"*x1.fit 2>/dev/null | sort); do
     ln -sf "$f" .; NKEEP=$((NKEEP+1))
 done
 for f in $(ls "${PROJECT_DIR}/data/input/"*y1.fit 2>/dev/null | sort); do
     ln -sf "$f" .; NFKEEP=$((NFKEEP+1))
 done
-echo "  → Darks liés: ${NKEEP}  Flats liés: ${NFKEEP}"
+for f in $(ls "${PROJECT_DIR}/data/input/"*b1.fit 2>/dev/null | sort); do
+    ln -sf "$f" .; NBKEEP=$((NBKEEP+1))
+done
+echo "  → Darks liés: ${NKEEP}  Flats liés: ${NFKEEP}  Obs liées: ${NBKEEP}"
 
 # Ajuster nfy2/nfx2 dans ms.par au nombre réel de fichiers si >0
 if [ "${NFKEEP}" -ge 1 ]; then
@@ -98,9 +102,9 @@ get_next_version() {
 }
 
 mkdir -p "${DATA_OUTPUT}" /tmp/msdp_pdf_$$
-for ps in geo1 geo2 geo3; do
+for ps in geo1 geo2 geo3 geo4 calib cal obs obsD1 obsD2 ivprof1 ivprof2 ivprof3; do
     if [ -f "${WORK_DIR}/${ps}.ps" ] && [ -s "${WORK_DIR}/${ps}.ps" ]; then
-        # Le numéro de version doit être identique pour les 3 plots d'un même run
+        # Le numéro de version doit être identique pour tous les plots d'un même run
         if [ -z "${VERSION_NUM:-}" ]; then
             VERSION_NUM="$(get_next_version geo1)"
             echo "  → Nouvelle version: _fortran_${VERSION_NUM}"
@@ -134,11 +138,27 @@ get_next_run() {
 RUN_NUM="${RUN_NUM:-$(get_next_run)}"
 cp "${WORK_DIR}/ms.lis"     "${DATA_OUTPUT}/ms_run_${RUN_NUM}.lis"     2>/dev/null || true
 cp "${WORK_DIR}/ACDF2.lis"  "${DATA_OUTPUT}/ACDF2_run_${RUN_NUM}.lis"  2>/dev/null || true
+cp "${WORK_DIR}/miv.lis"    "${DATA_OUTPUT}/miv_run_${RUN_NUM}.lis"     2>/dev/null || true
 cp "${MS_PAR}"              "${DATA_OUTPUT}/ms_par_run_${RUN_NUM}.par" 2>/dev/null || true
-echo "  ⚙  Logs versionnés: ms_run_${RUN_NUM}.lis / ACDF2_run_${RUN_NUM}.lis / ms_par_run_${RUN_NUM}.par"
+echo "  ⚙  Logs versionnés: ms_run_${RUN_NUM}.lis / ACDF2_run_${RUN_NUM}.lis / miv_run_${RUN_NUM}.lis / ms_par_run_${RUN_NUM}.par"
 
 cp "${WORK_DIR}/ACDF2.lis" "${DATA_OUTPUT}/" 2>/dev/null || true
-cp "${WORK_DIR}/ms.lis" "${DATA_OUTPUT}/" 2>/dev/null || true
+cp "${WORK_DIR}/ms.lis"    "${DATA_OUTPUT}/" 2>/dev/null || true
+
+# --- 6. Regrouper toutes les sorties du run dans data/output/run_NNN/ ---
+# Copie additive : on garde aussi les fichiers à plat (checkers/y regressent dessus)
+RUN_DIR="${DATA_OUTPUT}/run_${RUN_NUM}"
+mkdir -p "${RUN_DIR}"
+for ps in geo1 geo2 geo3 geo4 calib cal obs obsD1 obsD2 ivprof1 ivprof2 ivprof3; do
+    [ -f "${DATA_OUTPUT}/${ps}_fortran_${VERSION_NUM}.pdf" ] && \
+        cp "${DATA_OUTPUT}/${ps}_fortran_${VERSION_NUM}.pdf" "${RUN_DIR}/"
+done
+cp "${DATA_OUTPUT}/ms_run_${RUN_NUM}.lis"          "${RUN_DIR}/" 2>/dev/null || true
+cp "${DATA_OUTPUT}/ACDF2_run_${RUN_NUM}.lis"       "${RUN_DIR}/" 2>/dev/null || true
+cp "${DATA_OUTPUT}/miv_run_${RUN_NUM}.lis"         "${RUN_DIR}/" 2>/dev/null || true
+cp "${DATA_OUTPUT}/ms_par_run_${RUN_NUM}.par"      "${RUN_DIR}/" 2>/dev/null || true
+echo "  📁 Run regroupé: ${RUN_DIR}/"
+ls -1 "${RUN_DIR}" 2>/dev/null | sed 's/^/      /'
 
 echo ""
 echo "  Résultats: ${DATA_OUTPUT}/"

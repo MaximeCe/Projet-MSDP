@@ -330,7 +330,7 @@ c
             xl=float(nla1)+dn+float(lbdvel)/2.-1.
             yl=pro(nla1)+dn*(pro(nlb1)-pro(nla1))     
             write(3,*)' diff(nla) diff(nlb) dn xl yl ',
-     1           diff(nla),diff(nlb),dn,xl,yl  
+     1           diff(nla1),diff(nlb1),dn,xl,yl  
             
       xvert(1)=xl  !float(nla)+dn-1.+float(lbdvel)/2.    !  x=index-1
       xvert(2)=xl  !  -1=intervalle cubique

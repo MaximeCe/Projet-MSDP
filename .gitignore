@@ -38,6 +38,11 @@ data/output/ms.par.auto
 data/output/ms.yml.auto
 data/output/ingest*.csv
 data/output/ACDF2.*.ref
+
+# Sorties du pipeline Python (new_python/) — non versionnées
+new_python/outputs/
+new_python/.pytest_cache/
+new_python/*.pdf
 data/output/ref_t0/
 data/output/ivprof*
 
