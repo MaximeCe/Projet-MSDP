@@ -15,8 +15,9 @@ WORK_DIR="${BUILD_DIR}/work"
 SRC_FORTRAN="${PROJECT_DIR}/src/fortran/new"
 DATA_OUTPUT="${PROJECT_DIR}/data/output"
 
-# ms.par : argument ou défaut
-MS_PAR="${1:-${PROJECT_DIR}/src/fortran/ms.par}"
+# ms.par : argument ou défaut (le Python new_python tourne sur le même new/ms.par
+# pour une parité rigoureuse — mêmes nfx/nfy et même lbdvel 20/35/50).
+MS_PAR="${1:-${PROJECT_DIR}/src/fortran/new/ms.par}"
 
 if [ ! -f "${MS_PAR}" ]; then
     echo "ERREUR: ${MS_PAR} non trouvé"
@@ -87,77 +88,55 @@ rm -f ms.lis xtab.lis ytab.lis channel.lis geo*.ps geo*.pdf ACDF2.lis xryr.lis *
 export PGPLOT_FONT="/tmp/msdp_fortran/pgplot5_extracted/usr/lib/pgplot5/grfont.dat"
 timeout 120 ./msdp 2>&1 | tail -15
 
-# --- 5. Convertir PS → PDF versionné (en /tmp puis copie — gs ne peut pas écrire direct dans snap Nextcloud) ---
+# --- 5. Convertir PS → PDF et tout regrouper dans data/output/run_NNN/ ---
 echo ""
-echo "  Conversion PS → PDF (versionné)..."
-
-# Déterminer le prochain numéro de version libre
-get_next_version() {
-    local prefix="$1"
-    local i=1
-    while [ -f "${DATA_OUTPUT}/${prefix}_fortran_$(printf '%02d' ${i}).pdf" ]; do
-        i=$((i + 1))
-    done
-    printf '%02d' "${i}"
-}
+echo "  Conversion PS → PDF + regroupement dans run_NNN/..."
 
 mkdir -p "${DATA_OUTPUT}" /tmp/msdp_pdf_$$
-for ps in geo1 geo2 geo3 geo4 calib cal obs obsD1 obsD2 ivprof1 ivprof2 ivprof3; do
-    if [ -f "${WORK_DIR}/${ps}.ps" ] && [ -s "${WORK_DIR}/${ps}.ps" ]; then
-        # Le numéro de version doit être identique pour tous les plots d'un même run
-        if [ -z "${VERSION_NUM:-}" ]; then
-            VERSION_NUM="$(get_next_version geo1)"
-            echo "  → Nouvelle version: _fortran_${VERSION_NUM}"
-        fi
-        gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite \
-           -sOutputFile="/tmp/msdp_pdf_$$/${ps}.pdf" \
-           "${WORK_DIR}/${ps}.ps" 2>/dev/null
-        cp "/tmp/msdp_pdf_$$/${ps}.pdf" "${DATA_OUTPUT}/${ps}_fortran_${VERSION_NUM}.pdf"
-        echo "  ✓ ${ps}_fortran_${VERSION_NUM}.pdf"
-    fi
-done
-rm -rf /tmp/msdp_pdf_$$
-# --- Logs versionnés (trace des itérations) ---
-# Numéro de run : on repart du plus haut *_run_N consistant, puis on incrémente en
-# verrouillant ms_run_N & ACDF2_run_N ensemble.
+
+# --- Numéro de run & version : on compte les DOSSIERS run_NNN (pas de fichiers à plat) ---
+# Les sorties vivent uniquement dans data/output/run_NNN/.
 get_next_run() {
-    local i=1 max=0 n
-    # 2026-09-06 : NE compter QUE les runs Fortran. Le glob ms_run_*.lis matche
-    # aussi ms_run_py_*.lis (numérotation Python indépendante) — on les exclut.
-    for f in "${DATA_OUTPUT}"/ms_run_*.lis; do
-        [ -e "$f" ] || continue
-        case "$f" in
-            *_py_*) continue ;;   # run Python (numérotation séparée)
+    local max=0 d num digits
+    for d in "${DATA_OUTPUT}"/run_*; do
+        [ -d "$d" ] || continue
+        # extrait le nombre après "run_" (ex: run_014 -> 14)
+        digits="${d##*run_}"
+        case "$digits" in
+            *[!0-9]*|'') continue ;;
         esac
-        n="${f##*_run_}"; n="${n%.lis}"
-        n=$((10#$n))
-        if [ "$n" -gt "$max" ]; then max="$n"; fi
+        # enlève les zéros de tête pour éviter l'interprétation octale
+        num=$((10#$digits))
+        if [ "$num" -gt "$max" ]; then max="$num"; fi
     done
     printf '%03d' $((max + 1))
 }
 RUN_NUM="${RUN_NUM:-$(get_next_run)}"
-cp "${WORK_DIR}/ms.lis"     "${DATA_OUTPUT}/ms_run_${RUN_NUM}.lis"     2>/dev/null || true
-cp "${WORK_DIR}/ACDF2.lis"  "${DATA_OUTPUT}/ACDF2_run_${RUN_NUM}.lis"  2>/dev/null || true
-cp "${WORK_DIR}/miv.lis"    "${DATA_OUTPUT}/miv_run_${RUN_NUM}.lis"     2>/dev/null || true
-cp "${MS_PAR}"              "${DATA_OUTPUT}/ms_par_run_${RUN_NUM}.par" 2>/dev/null || true
-echo "  ⚙  Logs versionnés: ms_run_${RUN_NUM}.lis / ACDF2_run_${RUN_NUM}.lis / miv_run_${RUN_NUM}.lis / ms_par_run_${RUN_NUM}.par"
-
-cp "${WORK_DIR}/ACDF2.lis" "${DATA_OUTPUT}/" 2>/dev/null || true
-cp "${WORK_DIR}/ms.lis"    "${DATA_OUTPUT}/" 2>/dev/null || true
-
-# --- 6. Regrouper toutes les sorties du run dans data/output/run_NNN/ ---
-# Copie additive : on garde aussi les fichiers à plat (checkers/y regressent dessus)
+VERSION_NUM="$RUN_NUM"        # un seul numéro par run (PDFs + logs + dossier)
 RUN_DIR="${DATA_OUTPUT}/run_${RUN_NUM}"
 mkdir -p "${RUN_DIR}"
+echo "  → Run: ${RUN_NUM}  (dossier ${RUN_DIR}/)"
+
+# --- Convertir les PS → PDF et les écrire DIRECTEMENT dans run_NNN/ ---
 for ps in geo1 geo2 geo3 geo4 calib cal obs obsD1 obsD2 ivprof1 ivprof2 ivprof3; do
-    [ -f "${DATA_OUTPUT}/${ps}_fortran_${VERSION_NUM}.pdf" ] && \
-        cp "${DATA_OUTPUT}/${ps}_fortran_${VERSION_NUM}.pdf" "${RUN_DIR}/"
+    if [ -f "${WORK_DIR}/${ps}.ps" ] && [ -s "${WORK_DIR}/${ps}.ps" ]; then
+        gs -q -dNOPAUSE -dBATCH -sDEVICE=pdfwrite \
+           -sOutputFile="${RUN_DIR}/${ps}_fortran_${VERSION_NUM}.pdf" \
+           "${WORK_DIR}/${ps}.ps" 2>/dev/null
+        echo "  ✓ ${ps}_fortran_${VERSION_NUM}.pdf"
+    fi
 done
-cp "${DATA_OUTPUT}/ms_run_${RUN_NUM}.lis"          "${RUN_DIR}/" 2>/dev/null || true
-cp "${DATA_OUTPUT}/ACDF2_run_${RUN_NUM}.lis"       "${RUN_DIR}/" 2>/dev/null || true
-cp "${DATA_OUTPUT}/miv_run_${RUN_NUM}.lis"         "${RUN_DIR}/" 2>/dev/null || true
-cp "${DATA_OUTPUT}/ms_par_run_${RUN_NUM}.par"      "${RUN_DIR}/" 2>/dev/null || true
-echo "  📁 Run regroupé: ${RUN_DIR}/"
+rm -rf /tmp/msdp_pdf_$$
+
+# --- Logs versionnés (directement dans run_NNN/) ---
+cp "${WORK_DIR}/ms.lis"     "${RUN_DIR}/ms_run_${RUN_NUM}.lis"     2>/dev/null || true
+cp "${WORK_DIR}/ACDF2.lis"  "${RUN_DIR}/ACDF2_run_${RUN_NUM}.lis"  2>/dev/null || true
+cp "${WORK_DIR}/miv.lis"    "${RUN_DIR}/miv_run_${RUN_NUM}.lis"     2>/dev/null || true
+cp "${MS_PAR}"              "${RUN_DIR}/ms_par_run_${RUN_NUM}.par" 2>/dev/null || true
+echo "  ⚙  Logs: ms_run_${RUN_NUM}.lis / ACDF2_run_${RUN_NUM}.lis / miv_run_${RUN_NUM}.lis / ms_par_run_${RUN_NUM}.par"
+
+echo ""
+echo "  📁 Toutes les sorties du run sont dans ${RUN_DIR}/"
 ls -1 "${RUN_DIR}" 2>/dev/null | sed 's/^/      /'
 
 echo ""

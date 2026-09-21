@@ -23,11 +23,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Sequence
+import matplotlib.pyplot as plt
 
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")  # backend non-interactif (commes PGPLOT)
-import matplotlib.pyplot as plt
 
 __all__ = [
     "plot_geo1", "plot_geo2", "plot_geo3", "plot_geo4",

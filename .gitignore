@@ -4,14 +4,7 @@ __pycache__/
 *.venv/
 
 # Données lourdes (non versionnées)
-data/input/*.fits
-data/input/*.fit
-data/input/lights/*.fits
-data/input/lights/*.fit
-data/input/master/*.fits
-data/input/master/*.fit
-data/input/master/
-data/stash_*/
+data/input/
 
 # Sauvegardes locales de travail (jamais commitées)
 backup_*/
@@ -31,20 +24,13 @@ data/output/geo*.pdf
 data/output/geo*.ps
 
 # Configs & refs générées par run (ingest / run_pipeline)
-data/output/ms_par_run_*
-data/output/ms_run_*
-data/output/ACDF2_run_*
-data/output/ms.par.auto
-data/output/ms.yml.auto
-data/output/ingest*.csv
-data/output/ACDF2.*.ref
+data/output/
 
 # Sorties du pipeline Python (new_python/) — non versionnées
 new_python/outputs/
 new_python/.pytest_cache/
 new_python/*.pdf
-data/output/ref_t0/
-data/output/ivprof*
+
 
 # Build Fortran
 *.o

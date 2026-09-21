@@ -89,10 +89,43 @@ def main(argv: list[str]) -> int:
         p = run_dir / name
         if p.is_file():
             shutil.copy2(p, LOG_OUT / f"{Path(name).stem}_run_py_{run_num}.lis")
+    logp = run_dir / f"ms_run_{run_num}.lis"
+    if logp.is_file():
+        shutil.copy2(logp, LOG_OUT / f"ms_run_py_{run_num}.lis")
     shutil.copy2(ms_par, LOG_OUT / f"ms_par_run_py_{run_num}.par")
 
     print(f"  ✓ {n} sorties regroupées dans {run_dir}/")
     print(f"  ⚙  duré: {dt:.1f} s  | vitesses: {len(res.vitesses)}")
+
+    # --- Rapport de parité Fortran ↔ Python (validation.txt) ---
+    try:
+        from msdp.compare_runs import extract_fortran, extract_python, compare, \
+            render, DEFAULT_TOLS, last_run_dir
+        fdir = last_run_dir(LOG_OUT)
+        if fdir is None:
+            print("  ! pas de run Fortran trouvé → pas de rapport de parité")
+        else:
+            def _find(d: Path, stem: str) -> Path:
+                c = [p for p in d.glob(f"{stem}*") if p.is_file()]
+                return c[0] if c else (d / f"{stem}_001.lis")
+            flog, facd, fmiv = (_find(fdir, "ms_run_"), _find(fdir, "ACDF2_run_"),
+                                _find(fdir, "miv_run_"))
+            f = extract_fortran(flog, facd, fmiv)
+            p = extract_python(run_dir / f"ms_run_{run_num}.lis",
+                               run_dir / "ACDF2.lis", run_dir / "miv.lis")
+            report = render(compare(f, p, DEFAULT_TOLS))
+            valpath = run_dir / "validation.txt"
+            valpath.write_text(
+                "# Parité MSDP Fortran ↔ Python\n"
+                f"# Fortran : {fdir}\n"
+                f"# Python  : {run_dir}\n" + "-" * 74 + "\n" + report)
+            nfail = sum(1 for r in compare(f, p, DEFAULT_TOLS)
+                        if r["stat"] == "FAIL")
+            print(f"  ⚖  Validation: {valpath.name} "
+                  f"({'À REVOIR' if nfail else 'VALIDÉ'})")
+    except Exception as e:                     # ne jamais bloquer un run
+        print(f"  ! rapport de parité échoué: {e}")
+
     print("=" * 40)
     return 0
 

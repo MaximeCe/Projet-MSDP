@@ -863,6 +863,8 @@ c                                          yres=c*xres+d
       b=x1-a*y1                       !          y3-a*x3
       c=(y3-y4)/(x3-x4)               !                   (y2-y1)/(x2-x1)
       d=y3-c*x3                       !         x2-c*y2
+      ac=a*c                          !  2026-09-21 : ac était non déclaré (bug F77
+                                      !  implicite = 0) ; le dénominateur réel est 1-a*c
       xres=(a*d+b)/(1.-ac)
       yres=c*xres+d
       write(3,*)' intersec: x1..x4 / y1..y4 / a,b,c,d, xres,yres'
