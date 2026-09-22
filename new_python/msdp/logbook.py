@@ -76,9 +76,9 @@ def build_log(config: Any, notes: dict[str, Any], run_label: str,
                  f"{fmt_num(s3.get('cymx_range',[0,0])[1])}]")
     L.append(f"  transpec     : {fmt_num(s3.get('transpec'))}   "
              f"(jtr={s3.get('jtr', '-')}, jt1/jt2={s3.get('jt1_jt2', '-')})")
-    L.append(f"  pte(nr)      : {fmt_num(s3.get('pte(nr)'))}")
+    L.append(f"  pte(nr)      : {fmt_num(s3.get('pte(nr)'), 6)}")
     L.append(f"  center(1,nr) : {fmt_num(s3.get('center(1,nr)'))}")
-    L.append(f"  yic(nr)      : {fmt_num(s3.get('yic(nr)'))}")
+    L.append(f"  yic(nr)      : {fmt_num(s3.get('yic(nr)'), 6)}")
     L.append(f"  km           : {s3.get('km', '-')}")
     calr = s3.get("cal_range")
     if calr:

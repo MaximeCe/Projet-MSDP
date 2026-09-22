@@ -286,8 +286,8 @@ DEFAULT_TOLS = {
     "transpec": 0.005,   # rel
     "jtr": 0.5,          # abs px
     "km": 0,             # abs
-    "pte": 0.30,         # rel (écart connu ~13%)
-    "yic": 1.0,          # abs px (centre au milieu ic, écart structurel ~0.5 px)
+    "pte": 0.015,         # rel (1.5% : géométrie exacte, pte matche ~1%)
+    "yic": 0.2,           # abs px (centre au milieu ic, résidu sous-pixel)
     "acdf_x": 1.4,       # abs px
     "acdf_y": 0.3,       # abs px
     "vel": 1.0,          # abs px

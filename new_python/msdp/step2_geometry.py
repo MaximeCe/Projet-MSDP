@@ -418,7 +418,7 @@ def detect_geometry(meanflat: np.ndarray, config: Config) -> GeometryResult:
         for l in (7, 8, 9, 10):
             r = (l - 7) + 6                # 0-based row : l=7->6, 8->7, 9->8, 10->9
             h, sign_dx, _ = _V[l]
-            ii = int(xx[h, n] + 1 + sign_dx * xdel)   # colonne (Fortran ii)
+            ii = int(xx[h, n] + 1 + sign_dx * xdel)   # Fortran ii (1-based)
             if l in (7, 9):                # k, m : jj de 1 (0-based 0) à yy(ref)+1-1
                 jj1_idx = 0
                 jj2_stop = int(yy[h, n]) + 1          # slice up to yy(ref)+1 exclusive
@@ -427,13 +427,14 @@ def detect_geometry(meanflat: np.ndarray, config: Config) -> GeometryResult:
                 jj1_idx = int(yy[h, n])
                 jj2_stop = jm
                 is_pos = False
-            if ii < 0 or ii >= im or jj2_stop <= jj1_idx or len(meanflat) == 0:
+            if ii - 1 < 0 or ii > im or jj2_stop <= jj1_idx or len(meanflat) == 0:
                 continue
-            z = meanflat[ii, jj1_idx:jj2_stop].astype(np.float64)
+            # colonne 0-based = ii-1 (le Fortran indexe meanflat(ii,jj) 1-based)
+            z = meanflat[ii - 1, jj1_idx:jj2_stop].astype(np.float64)
             if laddy != 0:
                 z2 = np.zeros_like(z)
                 for d in range(-laddy, laddy + 1):
-                    z2 += meanflat[(ii + d) % im, jj1_idx:jj2_stop].astype(np.float64)
+                    z2 += meanflat[(ii - 1 + d) % im, jj1_idx:jj2_stop].astype(np.float64)
                 z = z2 / float(2 * laddy + 1)
 
             zg = np.zeros_like(z)
