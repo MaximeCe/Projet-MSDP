@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "msdp-python"
+version = "0.1.0"
+description = "Portage moderne Python 3.11 du pipeline MSDP (legacy Fortran 77)"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "astropy>=5.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.4"]
+perf = ["numba>=0.59"]
+
+[tool.setuptools.packages.find]
+include = ["msdp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

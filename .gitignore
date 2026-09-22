@@ -7,7 +7,7 @@ __pycache__/
 data/input/
 
 # Sauvegardes locales de travail (jamais commitées)
-backup_*/
+backup/
 
 # Fichiers de sortie générés
 *.lis

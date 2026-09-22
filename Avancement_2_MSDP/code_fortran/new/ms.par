@@ -1,0 +1,155 @@
+                                   ms.par                 
+                                   ========
+                               "disk.par" type
+                      parameters for solar disk observations        
+                              (format a8,i8)                               
+                 * (character 18) parameters often modified  
+                   for all parameters generally: 1 = action; 0 = inoperative 
+                                                        
+                                 SUCCESSIVE STEPS
+                                 ================
+     ixy       1 *  computation of average files dark, flat, field-stop 
+   igeom       1 *  calculation geometry
+  icalib       1    calculation calibration
+    ibmc       0    elementary calibrated c-files (1 file per time) 
+    icmd       0    d-files (spectroheliograms and I/V maps)
+    ides       0    dessins   (1;   0=no plot)
+  iquick       0    q-filesfor full scanned targets     
+  igrayq       0    plots of q-files
+                             Automatic plots during calculation
+                        (0 = plots    available only afterwards with "gv")
+   igeo1       1    idem  igeo1.ps  fig1
+   igeo2       1    idem  igeo2.ps  fig2
+   igeo3       1    idem  igeo3.ps  fig3
+   igeo4       1    idem  igeo4.ps  fig4
+  icalib       1    idem  calib.ps  fig5
+icalplot       0    idem  cal.ps    fig6                                  
+  iobsD1       0    idem  non calibrated solar observations obsD1.ps
+                          divided by averages over same X-value
+                          (approx. constant wavelength)
+  iobsD2       1    idem  obsD2.ps with calibration
+    iobs       0    idem  obs.ps for observations with calibration   
+ ivprof1       1    idem  ivprof1  fig 7 degree 3
+ ivprof2       1    idem  ivprof2  fig 8 degree 4
+ ivprof3       1    idem  ivprof3  fig 9 degrees 3+4 
+  jxpro1       0 
+  jxpro2       0
+  jxpro3       0
+   iipro       0
+   jjpro       0
+ lbdvel1      20    fist width of profile for veocity measurment
+                      unit=lamda between channels /10
+ lbdvel2      35    second ...
+ lbdvel3      50    3    (0 = no lbdvel)
+  labsem       0    line emission (0) or absorption (1) for velocities
+    iobs       1    idem  obs.ps for observations with calibration      
+  icalwh    1200    1000 times maximum white for calN       1100
+  icalbl     800    1000 times minimum black for calN               900
+ iobsDwh    1200    maximum white for obsD1 (not calib.) and obsD2 (calib.)  
+ iobsDbl     800    minimum black 
+  iobswh    1800    maximum white for obs.ps               1800
+  iobsbl     200    minimum black for obs.ps
+                                                                             
+   kedgx       0    pixels suppressed close to edges parallel to X
+   kedgy       0       ...                                    to Y   
+--------                                                                     
+                                SELECTED OBSERVATIONS
+                                =====================
+    nfx1       1   first used dark current    1    1
+    nfx2       5   last  used dark current    5    1
+    nfy1       1   first used flat field      1   22
+    nfy2      25    last  used flat field     25   23
+    nfb1       1   first used obs
+    nfb2       1   last  used obs
+  nfplot       1   obs plotted and used for profiles and corrections detailed
+ meanpro       1   use of mean vlues of several 4th order interpolation
+    nob1       1   first image to be processed             1
+    nob2       1   last  image to be processed           300  
+   ntmax       5   number of images per scan
+ priscan       4   = 4 for Meudon (5 images), scanning by prisms (2,3,1,5,4))  
+ nobstep       5   step between first images of two scans  
+
+     dob20170330   date of observation (optional)       
+    tob100000000 * first time for observations to be processed
+    tob224000000   last time              
+    tdc100000000   same for dark current     
+    tdc224000000           
+    tfs100000000   same for field stop
+    tfs224000000    
+   calfs      -1   0
+                   -1 if flat field Y replaces field stop Z
+    tff100000000   same for flat field          109590
+    tff224000000
+                                  GEOMETRY
+                                  ========
+      is    1536    CCD X-dimension
+      js    1024    CCD Y-dimension      
+      li  442000    field stop length (arcsec/1000)  
+      lj   61000    field stop width
+   jypas   45000     < translation between images (for correlations)  
+   nline       1   spectral line index                               
+   ncam1       1   detector index
+      nm       9   number of channels
+    lbda    6563   line wavelength (Angst)
+    dlbd     300   wavelength distance between channels (mA)
+  ivchan   14000   velocity with channel distance (m/s)
+  mupris    9000   translation between output channels (microns)
+  mustep    2500   distance betwwen successive slits (microns)      
+                      
+   nwinp       1   number of simultaneous detectors 
+   nbcln    1024   final number of X-CCD pixels        
+   nblgn    1536   final number of Y-CCD pixels        
+  invern       0   0   j-value of pixels of same wavelength 
+                       decreases with channels
+                   1   j-value of pixels of same wavelength 
+                       increases with channels
+     idc       1    generally 1
+                    0 = dark current not subtracted 
+                    -1 = dark current not abvailable
+--------                                          		    
+     mgx      12   minimum gradient for X lines       
+     mgy      12   minimum gradient for Y-lines 
+   laddx       0   lines added (on both sides) for X-lines (up and down)
+   laddy       0   lines added (on both sides) for Y-lines (left and right)
+     ja1     151   Y value + 1      
+     ja3     851   Y value + 1      
+                                                           
+                                CALIBRATION
+                                ===========
+                    (msdp2.f: cmf1.f -> cal.ps,  bmc1.f -> fichiers c*)
+  milsec     500    output pixel (unit arcsec/1000)
+  icalct       0    0 = calibration by flat field
+                    1 = calibration by field stop (continuum)    
+  inclin       1    0 = line profiles determined by previous calculations
+                        (-> jt1000,ja1000,jb1000)
+                    1 = determination of mean curve of absorption line
+  ncurv1       5    first channel plotted for line profile determination (4)
+  ncurv2       6    last channel  .....                                  (6)
+      nr       5    reference channel
+  ntrans       5    reference channel for computation Ts (spectra translation)
+                      if = 0, Ts deduced from profiles line centers
+jaddprof       0    Points added to the mean profile profmm (left and right)
+                    in addition to the profile width nm*Ts.
+   x1cal     100    X value for plots of intensity calibrations
+   x2cal     750    X value for plots of intensity calibrations   
+   y1cal     200    first Y value for plots of intensity calibrations  
+   y2cal     700    second Y value for plots of intensity calibrations  
+
+   iedge       0    for left and right (C calibration plots)
+  jparab      10  number of points from left and right for least square parab.
+ leastsq       1    least squares method for tilting andle of constant lambda  
+   iliss      60    smoothing over (2*iliss+1)*(2*jliss+1) points
+   jliss       0    
+   calbl     800    calblack*1000   for plot cal2
+   calwh    1200    calwhite*1000   for plot cal2
+margline       0    margin points suppressed beginning and end of i and j
+                       to look for line center with profiles
+   marge       0    same margin for results of calibration
+   itest       1    tests for calibration computations
+   jtest     121       "
+   ntest       9       "
+   ideg3       0    profiles with interpolationss degree 3
+   ideg4       0    profiles with interpolationss degree 4
+   iboth       1    profiles with interpolationss deg mixed
+end                                                              
+                                    

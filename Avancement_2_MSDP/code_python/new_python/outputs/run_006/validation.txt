@@ -1,0 +1,20 @@
+# Parité MSDP Fortran ↔ Python
+# Fortran : /home/max/nextcloud/Workspace/Projet-MSDP/data/output/run_002
+# Python  : /home/max/nextcloud/Workspace/Projet-MSDP/new_python/outputs/run_006
+--------------------------------------------------------------------------
+grandeur                      fortran       python       diff  stat
+--------------------------------------------------------------------------
+transpec                        42.24        42.24     0.000102  PASS
+jtr                                42           42            0  PASS
+jt1                                41           41            0  PASS
+jt2                                83           83            0  PASS
+km                                459          459            0  PASS
+pte(nr)                      -0.00635       -0.005       0.2126  PASS
+yic(nr)                          55.5        55.01        0.488  PASS
+ACDF2 X max                         0         1.37         1.37  PASS
+ACDF2 Y max                         0         0.19         0.19  PASS
+ACDF2 X mean                        0       0.3581       0.3581  PASS
+ACDF2 Y mean                        0      0.05806      0.05806  PASS
+vitesses (lbdvel communs) - - -  N/A (lbdvel différents)
+--------------------------------------------------------------------------
+Statut global : 11 PASS, 0 WARN, 0 FAIL  →  VALIDÉ
