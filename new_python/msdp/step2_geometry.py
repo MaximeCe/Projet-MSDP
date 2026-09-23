@@ -149,11 +149,15 @@ class GeometryResult:
             ])
         return np.array(rows)
 
-    def write_acdf2(self, path: str | Path = "ACDF2.lis") -> None:
-        """Écrit ACDF2.lis (format 8f8.2 par ligne, mm canaux)."""
+    def write_acdf2(self, path: str | Path = "ACDF2.csv") -> None:
+        """Écrit la géométrie ACDF2 au format CSV (une ligne = un canal).
+
+        Colonnes : ``A_x A_y C_x C_y D_x D_y F_x F_y`` (8 champs).
+        """
         with open(path, "w") as fh:
-            for row in self.acdf2():
-                fh.write("".join(f"{v:8.2f}" for v in row) + "\n")
+            fh.write("can,A_x,A_y,C_x,C_y,D_x,D_y,F_x,F_y\n")
+            for i, row in enumerate(self.acdf2(), 1):
+                fh.write(",".join(f"{v:.6f}" for v in row) + "\n")
 
     def to_xr_yr(self) -> tuple[np.ndarray, np.ndarray]:
         """Convertit (xx, yy) → (xr, yr) au format attendu par `channels`.

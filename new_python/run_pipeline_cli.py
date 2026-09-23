@@ -4,12 +4,12 @@
 Exécute le pipeline complet (moyennes → géométrie → canaux → calib → obs →
 profils I/V) et regroupe TOUTES les sorties dans un dossier ``run_NNN/`` sous
 ``new_python/outputs/`` (numéroté automatiquement), plus les logs versionnés
-``ms_run_py_NNN.lis`` / ``ACDF2_run_py_NNN.lis``.
+``ms_run_py_NNN.json`` / ``ACDF2_run_py_NNN.csv``.
 
 Usage :
-    python run_pipeline_cli.py [ms.par] [data_dir]
-      ms.par    : défaut src/fortran/new/ms.par
-      data_dir  : défaut data/input
+    python run_pipeline_cli.py [config.yml] [data_dir]
+      config.yml : défaut new_python/config.yml
+      data_dir   : défaut data/input
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import shutil
 import os
 import sys
 import time
+import json
 from pathlib import Path
 
 # permet d'importer msdp depuis ce fichier (racine new_python/)
@@ -26,10 +27,11 @@ from msdp.config import Config
 from msdp.pipeline import run_pipeline
 
 PROJ = Path(__file__).resolve().parent.parent
-MS_PAR_DEF = PROJ / "src/fortran/new/ms.par"
+MS_PAR_DEF = PROJ / "src/fortran/new/ms.par"        # fallback (format legacy)
+CONFIG_YML_DEF = Path(__file__).resolve().parent / "config.yml"
 DATA_DIR_DEF = PROJ / "data/input"
 OUT_ROOT = Path(__file__).resolve().parent / "outputs"
-LOG_OUT = PROJ / "data/output"            # ms_run_py_NNN.lis consignés ici
+LOG_OUT = PROJ / "data/output"            # ms_run_py_NNN.json consignés ici
 
 
 def _next_run_n(out_root: Path) -> str:
@@ -46,10 +48,14 @@ def _next_run_n(out_root: Path) -> str:
 
 
 def main(argv: list[str]) -> int:
-    ms_par = Path(argv[1]) if len(argv) > 1 else MS_PAR_DEF
+    # config.yml par défaut ; ms.par legacy accepté en fallback
+    cfg = Path(argv[1]) if len(argv) > 1 else CONFIG_YML_DEF
+    if not cfg.is_file() and cfg.name.endswith((".yml", ".yaml")):
+        # repli sur ms.par legacy si config.yml absent
+        cfg = MS_PAR_DEF if MS_PAR_DEF.is_file() else cfg
     data_dir = Path(argv[2]) if len(argv) > 2 else DATA_DIR_DEF
-    if not ms_par.is_file():
-        print(f"ERREUR: ms.par introuvable: {ms_par}")
+    if not cfg.is_file():
+        print(f"ERREUR: configuration introuvable: {cfg}")
         return 1
     if not data_dir.is_dir():
         print(f"ERREUR: data_dir introuvable: {data_dir}")
@@ -65,12 +71,12 @@ def main(argv: list[str]) -> int:
 
     print("=" * 40)
     print("  Pipeline Python MSDP (new_python)")
-    print(f"  ms.par  : {ms_par}")
+    print(f"  config  : {cfg}")
     print(f"  data_dir: {data_dir}")
     print(f"  run     : run_{run_num}")
     print("=" * 40)
 
-    config = Config.from_file(ms_par)
+    config = Config.from_file(cfg)
     t0 = time.time()
     res = run_pipeline(config, data_dir, work_dir=work, run_label=run_num)
     dt = time.time() - t0
@@ -84,15 +90,18 @@ def main(argv: list[str]) -> int:
         if f.is_file():
             shutil.copy2(f, run_dir / f.name)
             n += 1
-    # copie des logs versionnés dans data/output/
-    for name in ("ACDF2.lis", "miv.lis"):
+    # copie des données versionnées dans data/output/ (ACDF2.csv, miv.csv, log.json)
+    for name in ("ACDF2.csv", "miv.csv"):
         p = run_dir / name
         if p.is_file():
-            shutil.copy2(p, LOG_OUT / f"{Path(name).stem}_run_py_{run_num}.lis")
-    logp = run_dir / f"ms_run_{run_num}.lis"
+            shutil.copy2(p, LOG_OUT / f"{Path(name).stem}_run_py_{run_num}.csv")
+    logp = run_dir / f"ms_run_{run_num}.json"
     if logp.is_file():
-        shutil.copy2(logp, LOG_OUT / f"ms_run_py_{run_num}.lis")
-    shutil.copy2(ms_par, LOG_OUT / f"ms_par_run_py_{run_num}.par")
+        shutil.copy2(logp, LOG_OUT / f"ms_run_py_{run_num}.json")
+    # config utilisée, versionnée (config.yml source)
+    cfg_out = LOG_OUT / f"ms_par_run_py_{run_num}.yml" \
+        if str(cfg).endswith((".yml", ".yaml")) else LOG_OUT / f"ms_par_run_py_{run_num}.par"
+    shutil.copy2(cfg, cfg_out)
 
     print(f"  ✓ {n} sorties regroupées dans {run_dir}/")
     print(f"  ⚙  duré: {dt:.1f} s  | vitesses: {len(res.vitesses)}")
@@ -111,8 +120,8 @@ def main(argv: list[str]) -> int:
             flog, facd, fmiv = (_find(fdir, "ms_run_"), _find(fdir, "ACDF2_run_"),
                                 _find(fdir, "miv_run_"))
             f = extract_fortran(flog, facd, fmiv)
-            p = extract_python(run_dir / f"ms_run_{run_num}.lis",
-                               run_dir / "ACDF2.lis", run_dir / "miv.lis")
+            p = extract_python(run_dir / f"ms_run_{run_num}.json",
+                               run_dir / "ACDF2.csv", run_dir / "miv.csv")
             report = render(compare(f, p, DEFAULT_TOLS))
             valpath = run_dir / "validation.txt"
             valpath.write_text(

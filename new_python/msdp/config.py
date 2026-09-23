@@ -1,7 +1,10 @@
-"""Configuration MSDP — chargeur du fichier ``ms.par`` (format Fortran ``a8,i8``).
+"""
+Configuration MSDP — chargeur du fichier ``ms.par`` (format Fortran ``a8,i8``)
+ou fichier YAML ``config.yml``.
 
 La source de vérité des paramètres est le fichier ``ms.par`` du pipeline Fortran
-(``src/fortran/new/ms.par``). Chaque ligne porte **exactement** un nom sur 8
+(``src/fortran/new/ms.par``) ou un fichier YAML moderne ``config.yml``.
+Chaque ligne ms.par porte **exactement** un nom sur 8
 caractères (colonnes 1-8, droit-justifié, préfixé d'espaces) et une valeur
 entière sur 8 caractères (colonnes 9-16).
 
@@ -21,6 +24,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +84,19 @@ def parse_ms_par(path: str | Path) -> list[MsPar]:
     return params
 
 
+def _to_dict(pars: Iterator[MsPar]) -> dict[str, int]:
+    """Convertit une séquence de :class:`MsPar` en dict nom -> valeur.
+
+    Attention : le Fortran peut déclarer le même nom deux fois (ex. ``iobs``
+    apparaît 2× dans ms.par). La **dernière** occurrence gagne, cohérent avec
+    `par1`/`readpar` qui relisent le fichier et retournent la dernière valeur.
+    """
+    out: dict[str, int] = {}
+    for p in pars:
+        out[p.name] = p.value
+    return out
+
+
 @dataclass(frozen=True)
 class Config:
     """Configuration typée du pipeline MSDP.
@@ -86,7 +107,7 @@ class Config:
     Parameters
     ----------
     ms_par_path : str | Path
-        Chemin du fichier ``ms.par``.
+        Chemin du fichier ``ms.par`` ou ``config.yml``.
     params : dict[str, int] | None
         Table pré-chargée (utile pour les tests / surcharge). Si fournie, elle
         fait foi sans re-lecture du fichier.
@@ -97,8 +118,28 @@ class Config:
 
     @classmethod
     def from_file(cls, path: str | Path) -> "Config":
-        """Charge une configuration depuis un fichier ``ms.par``."""
-        return cls(ms_par_path=Path(path), params=_to_dict(parse_ms_par(path)))
+        """Charge une configuration depuis un fichier ``ms.par`` ou ``config.yml``.
+
+        Si l'extension est .yml ou .yaml, charge comme YAML.
+        Sinon, charge comme ms.par (format Fortran a8,i8).
+        """
+        path = Path(path)
+        if path.suffix.lower() in (".yml", ".yaml"):
+            return cls.from_yaml(path)
+        return cls(ms_par_path=path, params=_to_dict(parse_ms_par(path)))
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "Config":
+        """Charge une configuration depuis un fichier YAML."""
+        if yaml is None:
+            raise RuntimeError("PyYAML n'est pas installé (pip install pyyaml)")
+        with open(path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+        if not isinstance(data, dict):
+            raise ValueError(f"Fichier YAML {path} doit contenir un mapping")
+        # Convertir toutes les valeurs en int (le pipeline attend des int)
+        params = {k: int(v) for k, v in data.items()}
+        return cls(ms_par_path=path, params=params)
 
     @classmethod
     def from_dict(cls, params: dict[str, int]) -> "Config":
@@ -113,7 +154,7 @@ class Config:
     def require(self, key: str) -> int:
         """Retourne la valeur d'un paramètre, lève une exception si absent."""
         if key not in self.params:
-            raise KeyError(f"Paramètre '{key}' absent de ms.par")
+            raise KeyError(f"Paramètre '{key}' absent de la configuration")
         return self.params[key]
 
     def __getitem__(self, key: str) -> int:
@@ -161,16 +202,3 @@ class Config:
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"Config(from={self.ms_par_path}, nparams={len(self.params)})"
-
-
-def _to_dict(pars: Iterator[MsPar]) -> dict[str, int]:
-    """Convertit une séquence de :class:`MsPar` en dict nom -> valeur.
-
-    Attention : le Fortran peut déclarer le même nom deux fois (ex. ``iobs``
-    apparaît 2× dans ms.par). La **dernière** occurrence gagne, cohérent avec
-    `par1`/`readpar` qui relisent le fichier et retournent la dernière valeur.
-    """
-    out: dict[str, int] = {}
-    for p in pars:
-        out[p.name] = p.value
-    return out

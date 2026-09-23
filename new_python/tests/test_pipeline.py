@@ -30,7 +30,8 @@ from msdp import step2_geometry as g2
 
 PROJ = Path("/home/max/nextcloud/Workspace/Projet-MSDP")
 DATA_IN = PROJ / "data/input"
-MS_PAR = PROJ / "src/fortran/new/ms.par"
+MS_PAR = PROJ / "src/fortran/new/ms.par"        # fallback legacy
+CONFIG_YML = PROJ / "new_python/config.yml"     # config moderne (YAML)
 WORK_FORTRAN = Path("/tmp/msdp_pipeline/work")   # binaires moyens du Fortran
 OUT = PROJ / "data/output"
 
@@ -40,13 +41,13 @@ OUT = PROJ / "data/output"
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def config() -> Config:
-    return Config.from_file(MS_PAR)
+    return Config.from_file(CONFIG_YML)
 
 
 @pytest.fixture(scope="module")
 def averaged() -> dict[str, s1.AveragedImage]:
     """Étape 1 : moyennes dark/flat (écrites dans /tmp)."""
-    return s1.run_step1(DATA_IN, Config.from_file(MS_PAR), "/tmp/msdp_py1")
+    return s1.run_step1(DATA_IN, Config.from_file(CONFIG_YML), "/tmp/msdp_py1")
 
 
 @pytest.fixture(scope="module")
@@ -112,7 +113,11 @@ def test_geometry_parite_9_canaux(meanflat, config):
     (X max ~1.4 px, mean ~0.2 px ; Y max ~0.1 px — voir skill
     dpsm-pipeline python-port-fixes : 'max 1.370 px, mean 0.183 px')."""
     geom = g2.detect_geometry(meanflat, config)
-    ref = np.loadtxt(OUT / "ACDF2_run_001.lis")
+    # référence Fortran versionnée (le refactor run_pipeline.sh a déplacé les
+    # sorties Fortran dans data/output/run_NNN/ — cf. run_007 = run validé 9/9)
+    ref_path = OUT / "run_007" / "ACDF2_run_007.lis"
+    ref = np.loadtxt(ref_path) if ref_path.is_file() \
+        else np.loadtxt(OUT / "ACDF2_run_001.lis")
     diff = np.abs(geom.acdf2() - ref)
     assert geom.acdf2().shape == (9, 8)
     # X (colonnes 0-3) : enveloppe documentée ~1.4 px sur les 9 canaux
@@ -177,12 +182,13 @@ def test_assembly_calib_et_plot(meanflat, config):
     jt1 = int(xc - float(jtr) / 2.0 + 0.5)
     jt2 = jt1 + jtr
     profmm, km = c4.profmean(cliss, center, pte, jt1, jt2, jtr, config.nm)
+    profmm = np.asarray(profmm)
     assert profmm.shape == (km,) and km > 0
     cal = c4.calibrate(cymx, cliss, profmm, center, pte, jtr, jt1, jt2, km)
     assert cal.shape == cymx.shape and np.all(cal > 0), "cal doit être > 0"
 
-    # plotting : une figure sortie sans exception
-    out = _P('/tmp/msdp_asm_test.pdf')
+    # plotting : une figure sortie sans exception (.png)
+    out = _P('/tmp/msdp_asm_test.png')
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         prof1 = cliss[iim // 2, :, 0]                 # profil 1D du centre

@@ -9,7 +9,7 @@ de calibration ``cal``, on :
   et ``profnf(.,.,3)`` = profil mixte degré 3 ;
 - **intvel3/intvel4** : mesure du **bissecteur de vitesse** (droite passant par
   le demi-point des différences) → coordonnées ``(xv2, yv2)`` écrites dans
-  ``miv.lis`` (km/s).
+  ``miv.csv`` (lbdvel, xv2, yv2) côté Python (le Fortran écrit ``miv.lis``).
 
 La visualisation (ivprof1/2/3.ps) est isolée dans ``plotting.py``. Les vitesses
 ne sont calculées que si ``lbdvel* > 0``.

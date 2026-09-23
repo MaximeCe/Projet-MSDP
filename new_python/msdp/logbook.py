@@ -1,14 +1,17 @@
-"""Logbook — génération d'un log de pipeline propre et structuré.
+"""Logbook — génération d'un log de pipeline structuré au format **JSON**.
 
-Remplace le ``ms.lis`` du Fortran (journal de brouillon, format non nominal)
-par un log lisible par sections, construit à partir des grandeurs clés que
-``run_pipeline`` collecte dans ``PipelineResult.notes``.
+Remplace le ``ms.lis`` du Fortran (journal de brouillon, format non nominal) et
+l'ancien log texte `.lis` par un fichier JSON ``ms_run_<run_label>.json``,
+construit à partir des grandeurs clés que ``run_pipeline`` collecte dans
+``PipelineResult.notes``.
 
-Écrit ``ms_run_<run_label>.lis`` dans le dossier de run.
+Un rendu texte lisible (``build_log`` / ``build_log_txt``) est conservé pour la
+consultation humaine, mais le fichier produit est le JSON structuré.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +26,55 @@ def fmt_num(x: Any, nd: int = 3) -> str:
     return str(x)
 
 
+def build_log_json(res: Any, outputs: dict[str, Any] | None = None) -> dict:
+    """Construit le log structuré (dict JSON-serialisable) d'un run.
+
+    Rassemble : en-tête (date, run, config), les notes de chaque étape, les
+    timings et la liste des sorties produites.
+
+    Returns
+    -------
+    dict
+        Log structuré (JSON-compatible : floats/ints/str/list/dict).
+    """
+    run_label = res.outputs.get("run_label", "py") or "py"
+    log: dict[str, Any] = {
+        "format": "msdp.pipeline.log",
+        "version": 1,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "run": run_label,
+        "config": str(res.config.ms_par_path) if hasattr(res.config, "ms_par_path")
+        else "",
+    }
+    # notes des étapes = dict déjà JSON-compatible (floats/ints/lists/dicts)
+    for k, v in (res.notes or {}).items():
+        log[k] = _jsonable(v)
+    if outputs:
+        log["sorties"] = _jsonable(outputs)
+    return log
+
+
+def _jsonable(x: Any) -> Any:
+    """Convertit récursivement en types JSON-safe (pipelines les numpy scalars)."""
+    import numpy as np
+    if isinstance(x, dict):
+        return {str(k): _jsonable(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_jsonable(v) for v in x]
+    if isinstance(x, (np.integer,)):
+        return int(x)
+    if isinstance(x, (np.floating,)):
+        return float(x)
+    if isinstance(x, (np.ndarray,)):
+        return _jsonable(x.tolist())
+    if isinstance(x, (int, float, str, bool)) or x is None:
+        return x
+    return str(x)
+
+
+# --------------------------------------------------------------------------- #
+# Rendu texte lisible (consultation humaine / rétrocompat)
+# --------------------------------------------------------------------------- #
 def _acdf2_block(rows: list[list[float]], nd: int = 2) -> str:
     """Tableau ACDF2 : une ligne par canal (A C D F en X puis Y)."""
     lines = ["    can  |   A_x    C_x    D_x    F_x |   A_y    C_y    D_y    F_y"]
@@ -38,9 +90,12 @@ def _acdf2_block(rows: list[list[float]], nd: int = 2) -> str:
     return "\n".join(lines)
 
 
-def build_log(config: Any, notes: dict[str, Any], run_label: str,
-              ms_par: str = "", outputs: dict[str, Any] | None = None) -> str:
-    """Construit le log structuré à partir des notes collectées."""
+def build_log_txt(res: Any, outputs: dict[str, Any] | None = None) -> str:
+    """Construit un log texte lisible à partir des notes (consultation humaine)."""
+    config = res.config
+    notes = res.notes or {}
+    run_label = res.outputs.get("run_label", "py") or "py"
+    ms_par = res.outputs.get("ms_par", "")
     L = []
     bar = "#" * 70
     L.append(bar)
@@ -48,7 +103,7 @@ def build_log(config: Any, notes: dict[str, Any], run_label: str,
     L.append(f"#  run         : {run_label}")
     L.append(f"#  date        : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     if ms_par:
-        L.append(f"#  ms.par      : {ms_par}")
+        L.append(f"#  config      : {ms_par}")
     L.append(bar)
 
     # --- Step 1 : moyennes ---
@@ -141,14 +196,21 @@ def build_log(config: Any, notes: dict[str, Any], run_label: str,
 
 
 def write_log(res: Any, outdir: str | Path) -> Path:
-    """Écrit ``ms_run_<run_label>.lis`` dans le dossier de run."""
+    """Écrit ``ms_run_<run_label>.json`` (log structuré) dans le dossier de run.
+
+    Conserve aussi un rendu texte lisible ``ms_run_<run_label>.txt`` pour la
+    consultation humaine. Retourne le chemin du fichier JSON.
+    """
     outdir = Path(outdir)
     run_label = res.outputs.get("run_label", "py") or "py"
-    content = build_log(res.config, res.notes, run_label,
-                        ms_par=res.outputs.get("ms_par", ""),
-                        outputs={k: v for k, v in res.outputs.items()
-                                 if k not in ("run_dir", "run_label",
-                                              "ms_par", "ms_run.log")})
-    path = outdir / f"ms_run_{run_label}.lis"
-    path.write_text(content)
+    outputs = {k: v for k, v in res.outputs.items()
+               if k not in ("run_dir", "run_label", "ms_par", "ms_run.log")}
+    # JSON structuré (fichier nominal)
+    struct = build_log_json(res, outputs=outputs)
+    path = outdir / f"ms_run_{run_label}.json"
+    path.write_text(json.dumps(struct, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+    # rendu texte lisible (rétrocompat / lecture humaine)
+    txt = outdir / f"ms_run_{run_label}.txt"
+    txt.write_text(build_log_txt(res, outputs=outputs), encoding="utf-8")
     return path

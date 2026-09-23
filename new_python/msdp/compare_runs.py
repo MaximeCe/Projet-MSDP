@@ -2,9 +2,12 @@
 
 Prend un run Fortran (``data/output/run_NNN/``) et un run Python
 (``new_python/outputs/run_NNN/``), extrait les valeurs clés de chacun (log
-``ms_run_*.lis``, ``ACDF2.lis``, ``miv.lis``) et produit un rapport de *parité*
-direct (fichier de validation) indiquant écart relatif / absolu et statut
-PASS / WARN / FAIL par grandeurs.
+Fortran ``ms_run_*.lis`` / Python ``ms_run_*.json``, ``ACDF2`` / ``miv``) et
+produit un rapport de *parité* direct (fichier de validation) indiquant écart
+relatif / absolu et statut PASS / WARN / FAIL par grandeurs.
+
+Formats : côté Python formats modernes (log JSON, ACDF2.csv, miv.csv) ;
+rétrocompat sur l'ancien (log .lis texte, ACDF2.lis espace-séparé).
 
 Usage :
     python -m msdp.compare_runs --fortran data/output/run_001 \\
@@ -14,6 +17,7 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -128,55 +132,112 @@ def parse_fortran_calib(lines: list[str]) -> dict[int, dict[int, list[float]]]:
 
 
 # --------------------------------------------------------------------------- #
-# Extraction Python (log ms_run_NNN.lis + ACDF2 + miv)
+# Extraction Python (log ms_run_NNN.json + ACDF2.csv + miv.csv)
+# rétrocompatible : accepte l'ancien format (log .lis texte, ACDF2.lis, miv.lis)
 # --------------------------------------------------------------------------- #
+def _read_acdf2(path: Path):
+    """ACDF2 : CSV (avec entête) ou .lis espace-séparé (ancien)."""
+    if not path.is_file():
+        return None
+    line0 = path.read_text(errors="ignore").splitlines()[0]
+    if "," in line0 and line0.strip().lower().startswith("can"):
+        return np.loadtxt(str(path), delimiter=",", skiprows=1)
+    if "," in line0:
+        try:
+            return np.loadtxt(str(path), delimiter=",")
+        except ValueError:
+            return np.loadtxt(str(path))
+    try:
+        return np.loadtxt(str(path))
+    except ValueError:
+        return None
+
+
 def extract_python(log: Path, acdf2: Path, miv: Path) -> dict[str, Any]:
-    """Valeurs clés d'un run Python (log structuré)."""
-    text = log.read_text(errors="ignore") if log.is_file() else ""
+    """Valeurs clés d'un run Python (log JSON structuré ou ancien .lis texte)."""
     v: dict[str, Any] = {"source": "python"}
 
-    m = re.search(r"transpec\s*:\s*([\d.-]+)", text)
-    v["transpec"] = float(m.group(1)) if m else None
+    # --- log : JSON (nouveau) ou texte (ancien) ---
+    data: dict | None = None
+    txt = ""
+    if log.is_file():
+        raw = log.read_text(errors="ignore")
+        if log.suffix.lower() == ".json":
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                data = None
+        if data is None:          # texte legacy
+            txt = raw
 
-    m = re.search(r"jtr=(\d+)", text)
-    v["jtr"] = int(m.group(1)) if m else None
-    m = re.search(r"jt1/jt2=\[(\d+),\s*(\d+)\]", text)
-    v["jt1"], v["jt2"] = (int(m.group(1)), int(m.group(2))) if m else (None, None)
+    def _json(key: str, sub: str | None = None):
+        if data is None:
+            return None
+        sec = data.get(key) if sub is None else (data.get(key) or {}).get(sub)
+        return sec
 
-    m = re.search(r"\bkm\s*:\s*(\d+)", text)
-    v["km"] = int(m.group(1)) if m else None
-
-    m = re.search(r"pte\(nr\)\s*:\s*([\d.-]+)", text)
-    v["pte"] = float(m.group(1)) if m else None
-    m = re.search(r"yic\(nr\)\s*:\s*([\d.-]+)", text)
-    v["yic"] = float(m.group(1)) if m else None
-    if v["yic"] is None:                    # fallback sur center(1,nr)
-        m = re.search(r"center\(1,nr\)\s*:\s*([\d.-]+)", text)
+    # transpec : JSON [step3].transpec ou texte
+    if data is not None:
+        s3 = _json("step3") or {}
+        v["transpec"] = s3.get("transpec")
+        v["jtr"] = s3.get("jtr")
+        jt = s3.get("jt1_jt2")
+        v["jt1"], v["jt2"] = (jt[0], jt[1]) if isinstance(jt, list) and len(jt) >= 2 \
+            else (None, None)
+        v["km"] = s3.get("km")
+        v["pte"] = s3.get("pte(nr)")
+        v["yic"] = s3.get("yic(nr)")
+        if v["yic"] is None:
+            v["yic"] = s3.get("center(1,nr)")
+        cp = s3.get("cal_probe")
+        if isinstance(cp, dict):       # clés JSON = str → normaliser en int
+            cp = {int(k): {int(c): [float(x) for x in vals]
+                           for c, vals in (inner or {}).items()}
+                  for k, inner in cp.items()}
+        v["calib_probe"] = cp or {}
+    else:
+        m = re.search(r"transpec\s*:\s*([\d.-]+)", txt)
+        v["transpec"] = float(m.group(1)) if m else None
+        m = re.search(r"jtr=(\d+)", txt)
+        v["jtr"] = int(m.group(1)) if m else None
+        m = re.search(r"jt1/jt2=\[(\d+),\s*(\d+)\]", txt)
+        v["jt1"], v["jt2"] = (int(m.group(1)), int(m.group(2))) if m else (None, None)
+        m = re.search(r"\bkm\s*:\s*(\d+)", txt)
+        v["km"] = int(m.group(1)) if m else None
+        m = re.search(r"pte\(nr\)\s*:\s*([\d.-]+)", txt)
+        v["pte"] = float(m.group(1)) if m else None
+        m = re.search(r"yic\(nr\)\s*:\s*([\d.-]+)", txt)
         v["yic"] = float(m.group(1)) if m else None
+        if v["yic"] is None:
+            m = re.search(r"center\(1,nr\)\s*:\s*([\d.-]+)", txt)
+            v["yic"] = float(m.group(1)) if m else None
+        probe: dict[int, dict[int, list[float]]] = {}
+        for ln in txt.splitlines():
+            m = re.search(r"cal i=(\d+).*?:(.*)", ln)
+            if m and "canal1" in ln:
+                icd = int(m.group(1))
+                vals = [float(x) for x in re.findall(r"[\d.]+", m.group(2))]
+                if len(vals) == 7:
+                    probe[icd] = {1: vals}
+        v["calib_probe"] = probe
 
-    v["acdf2"] = np.loadtxt(acdf2) if acdf2.is_file() else None
+    # ACDF2 (CSV ou .lis)
+    v["acdf2"] = _read_acdf2(acdf2)
 
+    # vitesses : miv.csv (lbdvel,xv,yv) ou .lis espacé
     vel = []
     if miv.is_file():
         for ln in miv.read_text(errors="ignore").splitlines():
-            m = re.match(r"\s*\d+\s+(\d+)\s+([\d.]+)\s+([\d.-]+)", ln)
-            if m:
-                vel.append((int(m.group(1)), float(m.group(2)),
-                            float(m.group(3))))
+            if ln.strip().startswith("lbdvel"):
+                continue
+            parts = [p for p in ln.replace(",", " ").split() if p.strip()]
+            if len(parts) >= 3:
+                try:
+                    vel.append((int(float(parts[-3])), float(parts[-2]),
+                                float(parts[-1])))
+                except ValueError:
+                    continue
     v["vitesses"] = vel
-
-    # cal_probe : lignes "  cal i=100 (canal1): 0.4953 ..." du log structuré.
-    # structure calib_probe[pos]{canal} = [v1..v7] — on ne garde que le canal 1
-    # (le logbook n'imprime que le canal 1).
-    probe: dict[int, dict[int, list[float]]] = {}
-    for ln in text.splitlines():
-        m = re.search(r"cal i=(\d+).*?:(.*)", ln)
-        if m and "canal1" in ln:
-            icd = int(m.group(1))
-            vals = [float(x) for x in re.findall(r"[\d.]+", m.group(2))]
-            if len(vals) == 7:
-                probe[icd] = {1: vals}
-    v["calib_probe"] = probe
     return v
 
 
@@ -347,8 +408,19 @@ def main() -> int:
 
     flog = find_fr(fdir, "ms_run_"); facd = find_fr(fdir, "ACDF2_run_")
     fmiv = find_fr(fdir, "miv_run_")
-    plog = find_fr(pdir, "ms_run_"); pacd = pdir / "ACDF2.lis"
-    pmiv = pdir / "miv.lis"
+    # Python : privilégie les formats modernes (log .json, ACDF2.csv, miv.csv),
+    # sinon rétrocompat (ms_run_*.lis, ACDF2.lis, miv.lis)
+    def _pyfile(stem: str, *suffixes: str) -> Path:
+        for sfx in suffixes:
+            c = [p for p in pdir.glob(f"{stem}.{sfx}") if p.is_file()]
+            if c:
+                return c[0]
+        c = [p for p in pdir.glob(f"{stem}*") if p.is_file()]
+        return c[0] if c else pdir / f"{stem}.lis"
+
+    plog = _pyfile("ms_run", "json", "lis")
+    pacd = _pyfile("ACDF2", "csv", "lis")
+    pmiv = _pyfile("miv", "csv", "lis")
 
     f = extract_fortran(flog, facd, fmiv)
     p = extract_python(plog, pacd, pmiv)
